@@ -1,0 +1,48 @@
+{
+  "name": "kinet",
+  "version": "1.0.0",
+  "description": "AI assistant bridge for React/Java repo ecosystems — context, rules, commands, and skills",
+  "type": "module",
+  "bin": {
+    "kinet": "./bin/kinet.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "templates"
+  ],
+  "scripts": {
+    "start": "node bin/kinet.js",
+    "dev": "node --watch bin/kinet.js",
+    "test": "node --test src/**/*.test.js",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "glob": "^11.0.2",
+    "inquirer": "^12.5.2",
+    "js-yaml": "^4.1.0",
+    "ora": "^8.2.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "eslint": "^9.25.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "mcp",
+    "developer-tools",
+    "react",
+    "java"
+  ],
+  "author": "sjain@splaytech.com.au",
+  "license": "MIT"
+}
