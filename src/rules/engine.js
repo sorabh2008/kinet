@@ -1,5 +1,5 @@
 import { join, relative, extname } from 'path';
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, symlinkSync, unlinkSync } from 'fs';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -16,7 +16,7 @@ export class RulesEngine {
   async install(stack, customRuleIds = []) {
     mkdirSync(this.rulesDir, { recursive: true });
 
-    const toInstall = ['common', stack];
+    const toInstall = ['common', 'env', stack];
     if (stack === 'fullstack') toInstall.push('react', 'java');
     for (const id of customRuleIds) toInstall.push(id);
 
@@ -24,7 +24,7 @@ export class RulesEngine {
       const src = join(BUILTIN_RULES_DIR, `${id}.md`);
       const dst = join(this.rulesDir, `${id}.md`);
       if (existsSync(src) && !existsSync(dst)) {
-        writeFileSync(dst, readFileSync(src, 'utf8'));
+        symlinkSync(src, dst);
       }
     }
 
@@ -47,10 +47,13 @@ export class RulesEngine {
     const report = { violations: [], warnings: [], fixed: [], scanned: 0 };
 
     const validators = await this._loadValidators();
-    const allFiles = await glob('**/*.{ts,tsx,js,jsx,java}', {
-      cwd,
-      ignore: ['node_modules/**', '.kinet/**', 'dist/**', 'target/**', 'build/**'],
-    });
+    const ignore = ['node_modules/**', '.kinet/**', 'dist/**', 'target/**', 'build/**', 'venv/**', '.venv/**', '**/__pycache__/**', '.dart_tool/**', '**/*.g.dart', '**/*.freezed.dart'];
+
+    const [codeFiles, envFiles] = await Promise.all([
+      glob('**/*.{ts,tsx,js,jsx,java,py,cls,trigger,dart}', { cwd, ignore }),
+      glob('**/.env*', { cwd, ignore }),
+    ]);
+    const allFiles = [...new Set([...codeFiles, ...envFiles])];
 
     report.scanned = allFiles.length;
 
@@ -59,8 +62,7 @@ export class RulesEngine {
       const content = readFileSafe(absFile);
       if (!content) continue;
 
-      const ext = extname(relFile);
-      const lang = ['.ts', '.tsx', '.js', '.jsx'].includes(ext) ? 'js' : 'java';
+      const lang = detectLang(relFile);
 
       for (const validator of validators) {
         if (validator.lang && validator.lang !== lang) continue;
@@ -90,7 +92,12 @@ export class RulesEngine {
     const { reactValidators } = await import('./validators/react.js');
     const { javaValidators } = await import('./validators/java.js');
     const { commonValidators } = await import('./validators/common.js');
-    return [...commonValidators, ...reactValidators, ...javaValidators];
+    const { pythonValidators } = await import('./validators/python.js');
+    const { salesforceValidators } = await import('./validators/salesforce.js');
+    const { envValidators } = await import('./validators/env.js');
+    const { nodeValidators } = await import('./validators/node.js');
+    const { flutterValidators } = await import('./validators/flutter.js');
+    return [...commonValidators, ...envValidators, ...reactValidators, ...javaValidators, ...pythonValidators, ...salesforceValidators, ...nodeValidators, ...flutterValidators];
   }
 
   _writeIndex(ruleIds) {
@@ -126,6 +133,19 @@ function parseRulesFromMarkdown(id, md) {
     });
   }
   return rules;
+}
+
+function detectLang(relFile) {
+  const base = relFile.split('/').pop();
+  if (base === '.env' || base.startsWith('.env.')) return 'env';
+
+  const ext = extname(relFile);
+  if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) return 'js';
+  if (ext === '.java') return 'java';
+  if (ext === '.py') return 'python';
+  if (ext === '.cls' || ext === '.trigger') return 'apex';
+  if (ext === '.dart') return 'dart';
+  return null;
 }
 
 function readFileSafe(path) {

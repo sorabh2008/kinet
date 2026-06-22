@@ -65,6 +65,42 @@ function stackSection(ctx) {
     lines.push('');
   }
 
+  if (ctx.stack === 'python') {
+    lines.push(`### Python`);
+    if (t.pythonVersion) lines.push(`- Python: **${t.pythonVersion}**`);
+    if (t.packageManager && t.packageManager !== 'unknown') lines.push(`- Package manager: **${t.packageManager}**`);
+    if (t.framework && t.framework !== 'none') lines.push(`- Framework: **${t.framework}**`);
+    if (t.orm && t.orm !== 'none') lines.push(`- ORM: **${t.orm}**`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'salesforce') {
+    lines.push(`### Salesforce`);
+    if (t.apiVersion) lines.push(`- API version: **${t.apiVersion}**`);
+    if (t.packageDirectories?.length) lines.push(`- Package directories: ${t.packageDirectories.map(p => `\`${p}\``).join(', ')}`);
+    lines.push(`- LWC: ${t.usesLwc ? 'enabled' : 'not detected'}`);
+    if (t.usesAura) lines.push(`- Aura components: present (legacy — prefer LWC for new work)`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'node') {
+    lines.push(`### Node`);
+    if (t.nodeVersion) lines.push(`- Node: **${t.nodeVersion}**`);
+    lines.push(`- ${t.typescript ? 'TypeScript' : 'JavaScript'}`);
+    if (t.packageManager) lines.push(`- Package manager: **${t.packageManager}**`);
+    if (t.framework && t.framework !== 'none') lines.push(`- Framework: **${t.framework}**`);
+    if (t.orm && t.orm !== 'none') lines.push(`- ORM: **${t.orm}**`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'flutter') {
+    lines.push(`### Flutter`);
+    if (t.dartSdk) lines.push(`- Dart SDK: **${t.dartSdk}**`);
+    if (t.flutterSdk) lines.push(`- Flutter SDK: **${t.flutterSdk}**`);
+    if (t.stateManagement && t.stateManagement !== 'none') lines.push(`- State management: **${t.stateManagement}**`);
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -94,6 +130,51 @@ function architectureSection(ctx) {
     lines.push('');
   }
 
+  if (ctx.stack === 'python') {
+    lines.push(`### Python Layout`);
+    lines.push(`- Layout: **${s.layout || 'flat-layout'}**`);
+    if (s.hasManagePy) lines.push(`- Django project (\`manage.py\` present)`);
+    if (s.hasApp) lines.push(`- \`app/\` — application package`);
+    if (s.hasModels) lines.push(`- \`models/\` — data models`);
+    if (s.hasRoutes) lines.push(`- \`routes/\`/\`api/\` — endpoint definitions`);
+    if (s.hasServices) lines.push(`- \`services/\` — business logic`);
+    if (s.hasTests) lines.push(`- \`tests/\` — test suite`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'salesforce') {
+    lines.push(`### Salesforce Layout`);
+    lines.push(`- Source root: \`${s.sfdxRoot || 'force-app/main/default'}\``);
+    if (s.hasClasses) lines.push(`- \`classes/\` — Apex classes`);
+    if (s.hasTriggers) lines.push(`- \`triggers/\` — Apex triggers (delegate to handler classes)`);
+    if (s.hasLwc) lines.push(`- \`lwc/\` — Lightning Web Components`);
+    if (s.hasAura) lines.push(`- \`aura/\` — Aura components (legacy)`);
+    if (s.hasObjects) lines.push(`- \`objects/\` — custom object/field metadata`);
+    if (s.hasFlows) lines.push(`- \`flows/\` — declarative automation`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'node') {
+    lines.push(`### Node Layout`);
+    lines.push(`- Source root: \`${s.srcRoot || 'root'}\``);
+    if (s.hasRoutes) lines.push(`- \`routes/\` — route definitions`);
+    if (s.hasControllers) lines.push(`- \`controllers/\` — request handlers`);
+    if (s.hasServices) lines.push(`- \`services/\` — business logic`);
+    if (s.hasMiddleware) lines.push(`- \`middleware/\` — Express/Fastify middleware`);
+    if (s.hasModels) lines.push(`- \`models/\` — data models`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'flutter') {
+    lines.push(`### Flutter Layout`);
+    if (s.hasScreens) lines.push(`- \`lib/screens/\`/\`lib/pages/\` — top-level screens`);
+    if (s.hasWidgets) lines.push(`- \`lib/widgets/\` — reusable widgets`);
+    if (s.hasModels) lines.push(`- \`lib/models/\` — data models`);
+    if (s.hasServices) lines.push(`- \`lib/services/\`/\`lib/repositories/\` — data access and business logic`);
+    if (s.hasProviders) lines.push(`- \`lib/providers/\` — state management`);
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -120,6 +201,40 @@ function patternsSection(ctx) {
     if (p.exceptionStyle === 'global-handler') lines.push(`- Exception handling: global @ControllerAdvice handler — do not add try/catch in controllers`);
     if (p.validationStyle === 'bean-validation') lines.push(`- Validation: Bean Validation (jakarta.validation) — annotate DTOs, validate at controller boundary`);
     if (p.securityFramework) lines.push(`- Security: ${p.securityFramework} — follow existing SecurityConfig`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'python') {
+    lines.push(`### Python`);
+    lines.push(`- Type hints: ${p.usesTypeHints ? 'used — keep annotating new public functions' : 'not consistently used'}`);
+    if (p.usesDataclasses) lines.push(`- \`@dataclass\` is used for value objects`);
+    if (p.usesPydantic) lines.push(`- Pydantic models are used for validation/schemas`);
+    if (p.usesAsync) lines.push(`- Async/await is used — keep I/O-bound code non-blocking`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'salesforce') {
+    lines.push(`### Salesforce`);
+    lines.push(`- Sharing: ${p.sharingDeclared ? 'classes declare `with sharing`/`without sharing` explicitly' : 'not consistently declared — flag missing sharing declarations'}`);
+    lines.push(`- Triggers: ${p.triggerHandlerPattern ? 'delegate to handler classes' : 'no handler pattern detected — avoid inline trigger logic'}`);
+    if (p.usesSecurityEnforced) lines.push(`- CRUD/FLS: \`WITH SECURITY_ENFORCED\`/\`stripInaccessible\` used — follow this pattern for new SOQL/DML`);
+    if (p.usesCustomMetadata) lines.push(`- Custom Metadata Types are used for configuration — prefer over hardcoded values`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'node') {
+    lines.push(`### Node`);
+    lines.push(`- Error handling: **${p.errorHandlingStyle || 'inline'}**`);
+    if (p.validationLibrary && p.validationLibrary !== 'none') lines.push(`- Request validation: **${p.validationLibrary}**`);
+    if (p.usesAsyncAwait) lines.push(`- async/await is used — keep handlers wrapped in try/catch`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'flutter') {
+    lines.push(`### Flutter`);
+    lines.push(`- Widget style: **${p.widgetStyle || 'unknown'}**`);
+    if (p.usesConstConstructors) lines.push(`- \`const\` constructors are used — keep using them for static widget subtrees`);
+    if (p.usesNamedRoutes) lines.push(`- Named routes are used for navigation`);
     lines.push('');
   }
 
@@ -158,6 +273,32 @@ function testingSection(ctx) {
     lines.push('');
   }
 
+  if (ctx.stack === 'python') {
+    if (t.pythonFramework && t.pythonFramework !== 'unknown') lines.push(`- Test framework: **${t.pythonFramework}**`);
+    if (t.hasConftest) lines.push(`- Shared fixtures in \`conftest.py\``);
+    lines.push(`- Test files: \`test_*.py\``);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'salesforce') {
+    lines.push(`- Apex: every class needs a corresponding \`*Test.cls\` with \`@isTest\`, asserting behaviour (not just coverage %)`);
+    if (t.hasLwcJest) lines.push(`- LWC: Jest tests via \`@salesforce/sfdx-lwc-jest\``);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'node') {
+    if (t.nodeFramework && t.nodeFramework !== 'unknown') lines.push(`- Test framework: **${t.nodeFramework}**`);
+    if (t.hasSupertest) lines.push(`- HTTP integration tests: **supertest**`);
+    lines.push('');
+  }
+
+  if (ctx.stack === 'flutter') {
+    if (t.hasFlutterTest) lines.push(`- Test framework: **flutter_test**`);
+    if (t.hasMockito) lines.push(`- Mocking: **mockito**/**mocktail**`);
+    lines.push(`- Test files: \`test/**/*_test.dart\``);
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -177,10 +318,12 @@ These commands are available in Claude Code. Use them instead of typing freeform
 
 function skillsSection(stack) {
   const skills = ['planning', 'architecture', 'security', 'testing'];
+  const prefixes = { java: 'java-', react: 'react-', python: 'python-', salesforce: 'salesforce-', fullstack: 'fullstack-', node: 'node-', flutter: 'flutter-' };
+  const prefix = prefixes[stack] || '';
   return `## Available Skills
 
 Skills are deep expertise modules loaded on demand. Reference them explicitly:
-"Using the **${stack === 'java' ? 'java-' : 'react-'}security** skill, ..."
+"Using the **${prefix}security** skill, ..."
 
 ${skills.map(s => `- **${s}** — see \`.kinet/skills/${s}.md\``).join('\n')}
 `;

@@ -101,7 +101,7 @@ async function gatherConfig(cwd, opts) {
       type: 'list',
       name: 'stack',
       message: 'Primary stack:',
-      choices: ['react', 'java', 'fullstack'],
+      choices: ['react', 'node', 'java', 'python', 'salesforce', 'flutter', 'fullstack'],
       default: opts.stack || detected,
     },
     {
@@ -129,9 +129,28 @@ async function gatherConfig(cwd, opts) {
 function detectStack(cwd) {
   const hasPkg = existsSync(join(cwd, 'package.json'));
   const hasPom = existsSync(join(cwd, 'pom.xml')) || existsSync(join(cwd, 'build.gradle'));
+  const hasSfdx = existsSync(join(cwd, 'sfdx-project.json'));
+  const hasFlutter = existsSync(join(cwd, 'pubspec.yaml'));
+  const hasPython = existsSync(join(cwd, 'requirements.txt')) || existsSync(join(cwd, 'pyproject.toml'))
+    || existsSync(join(cwd, 'setup.py')) || existsSync(join(cwd, 'Pipfile'));
+
+  if (hasSfdx) return 'salesforce';
+  if (hasFlutter) return 'flutter';
   if (hasPkg && hasPom) return 'fullstack';
   if (hasPom) return 'java';
+  if (hasPython) return 'python';
+
+  if (hasPkg) {
+    const pkg = readJsonSafe(join(cwd, 'package.json'));
+    const hasReact = !!(pkg?.dependencies?.react || pkg?.devDependencies?.react);
+    return hasReact ? 'react' : 'node';
+  }
+
   return 'react';
+}
+
+function readJsonSafe(path) {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 }
 
 function ensureDirs(kinetDir) {

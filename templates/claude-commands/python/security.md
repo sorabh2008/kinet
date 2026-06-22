@@ -1,0 +1,40 @@
+---
+description: Run a security audit of changed or specified files and report OWASP issues
+---
+
+1. Load the security skill via `kinet_get_skill` with skill="security"
+2. If $ARGUMENTS is empty: `git diff main...HEAD --name-only` to find changed files
+   If $ARGUMENTS is a path: audit that path
+3. Search for known CVEs in dependencies via `kinet_web_search` for key packages in `requirements.txt`/`pyproject.toml`
+4. Run `kinet validate --json` for rule-based security violations
+
+Produce a Security Report:
+
+## Security Report — $ARGUMENTS
+
+### Severity Summary
+| Severity | Count |
+|----------|-------|
+| CRITICAL | |
+| HIGH | |
+| MEDIUM | |
+| LOW | |
+| INFO | |
+
+### Findings
+
+For each finding:
+**[SEVERITY] Finding Title**
+- File: path:line
+- OWASP Category: e.g. A03:2021 Injection
+- Description: What the issue is
+- Recommendation: How to fix it
+
+### Dependency CVEs
+Any known vulnerabilities in packages used by changed files (check `requirements.txt`/`pyproject.toml`/`poetry.lock`).
+
+### Compliance
+- SQL injection via string-built queries
+- Unsafe deserialization (`pickle.loads`, `yaml.load` without `SafeLoader`, `eval`/`exec` on untrusted input)
+- `subprocess` calls with `shell=True` or unsanitised input
+- Secrets read from hardcoded strings instead of environment variables

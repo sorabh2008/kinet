@@ -140,6 +140,79 @@ Controller → Service → ExternalServiceClient
 `);
   }
 
+  if (context.stack === 'python') {
+    lines.push(`## Python Patterns
+
+### Style
+- Type hints on all public function signatures
+- ${context.tech?.packageManager || 'pip'} for dependency management — pin versions in ${context.tech?.packageManager === 'poetry' ? 'pyproject.toml' : 'requirements.txt'}
+- Never use mutable default arguments
+
+### Errors & Logging
+- No bare \`except:\` — catch specific exception types
+- \`logging\` module, not \`print()\`, outside of scripts
+
+### Data Access
+- Parameterized queries only — never build SQL via string formatting/concatenation
+${context.tech?.orm && context.tech.orm !== 'none' ? `- ORM: ${context.tech.orm}` : ''}
+
+`);
+  }
+
+  if (context.stack === 'salesforce') {
+    lines.push(`## Salesforce Patterns
+
+### Apex
+- Every class declares \`with sharing\` / \`without sharing\` / \`inherited sharing\` explicitly
+- Bulkify all trigger/batch logic — never assume a single-record execution context
+- No SOQL or DML inside loops
+- Triggers delegate immediately to a handler class (one trigger per object)
+
+### Security
+- Enforce CRUD/FLS on user-facing SOQL/DML (\`WITH SECURITY_ENFORCED\` or \`Security.stripInaccessible\`)
+- No hardcoded record/org IDs — query by a stable external key instead
+
+### Components
+- New UI work uses Lightning Web Components, not Aura, unless extending an existing Aura component
+
+`);
+  }
+
+  if (context.stack === 'node') {
+    lines.push(`## Node Patterns
+
+### Layering
+- Routes/controllers receive the request, delegate to a service, return the response — no business logic in route handlers
+- Data access goes through ${context.tech?.orm && context.tech.orm !== 'none' ? context.tech.orm : 'a dedicated data-access layer'}, not inline in routes
+
+### Errors
+- Async handlers wrapped in try/catch or routed through centralised error-handling middleware
+- Fail fast on missing required environment variables at startup
+
+### Validation
+- Request validation via ${context.patterns?.validationLibrary && context.patterns.validationLibrary !== 'none' ? context.patterns.validationLibrary : 'a schema validation library'} at the boundary
+
+`);
+  }
+
+  if (context.stack === 'flutter') {
+    lines.push(`## Flutter Patterns
+
+### Architecture
+- Widgets stay presentational — network/business logic lives in a repository/service class
+- State management: ${context.tech?.stateManagement && context.tech.stateManagement !== 'none' ? context.tech.stateManagement : 'see tech stack'} — use this consistently, don't mix approaches
+
+### Async Safety
+- Always check \`mounted\` before using \`BuildContext\` after an \`await\`
+- Never leave a \`catch\` block empty — log or rethrow
+
+### Performance
+- Use \`const\` constructors wherever the subtree is static
+- Prefer \`ListView.builder\`/\`GridView.builder\` over building full lists eagerly
+
+`);
+  }
+
   return lines.join('');
 }
 
@@ -157,7 +230,7 @@ function buildDecisions(config, context) {
 **Context**: Starting project configuration captured by KINET init.
 
 **Decision**:
-${context.stack === 'react' || context.stack === 'fullstack' ? `- Frontend: React${context.tech?.typescript ? ' + TypeScript' : ''} with ${context.tech?.bundler || 'unknown bundler'}\n` : ''}${context.stack === 'java' || context.stack === 'fullstack' ? `- Backend: Java ${context.tech?.javaVersion || ''} + ${context.tech?.springBoot ? 'Spring Boot' : 'plain Java'} (${context.tech?.buildTool || 'maven'})\n` : ''}
+${context.stack === 'react' || context.stack === 'fullstack' ? `- Frontend: React${context.tech?.typescript ? ' + TypeScript' : ''} with ${context.tech?.bundler || 'unknown bundler'}\n` : ''}${context.stack === 'java' || context.stack === 'fullstack' ? `- Backend: Java ${context.tech?.javaVersion || ''} + ${context.tech?.springBoot ? 'Spring Boot' : 'plain Java'} (${context.tech?.buildTool || 'maven'})\n` : ''}${context.stack === 'python' ? `- Backend: Python ${context.tech?.pythonVersion || ''} + ${context.tech?.framework !== 'none' ? context.tech?.framework : 'no web framework'} (${context.tech?.packageManager || 'pip'})\n` : ''}${context.stack === 'salesforce' ? `- Platform: Salesforce (API v${context.tech?.apiVersion || 'unknown'})${context.tech?.usesLwc ? ' + Lightning Web Components' : ''}\n` : ''}${context.stack === 'node' ? `- Backend: Node${context.tech?.typescript ? ' + TypeScript' : ''} with ${context.tech?.framework !== 'none' ? context.tech?.framework : 'no framework'} (${context.tech?.packageManager || 'npm'})\n` : ''}${context.stack === 'flutter' ? `- Mobile: Flutter (Dart ${context.tech?.dartSdk || ''}) with ${context.tech?.stateManagement !== 'none' ? context.tech?.stateManagement : 'local state only'}\n` : ''}
 **Consequences**: All future development must align with these choices unless a new ADR supersedes this one.
 
 ---

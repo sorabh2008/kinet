@@ -1,6 +1,6 @@
 # KINET
 
-**AI Assistant Bridge for React/Java Ecosystems**
+**AI Assistant Bridge for React / Node / Java / Python / Salesforce / Flutter Ecosystems**
 
 KINET makes every AI interaction in your project aware of your stack, patterns, rules, and decisions. It eliminates the overhead of re-explaining your conventions and enforces consistency across all AI-assisted code.
 
@@ -20,6 +20,22 @@ KINET makes every AI interaction in your project aware of your stack, patterns, 
 
 ---
 
+## Supported Stacks
+
+| Stack | Detected via | Rules cover |
+|-------|--------------|--------------|
+| `react` | `package.json` (with `react` dependency) | HTTP-in-service-layer, no `any`, no inline styles, list keys, error boundaries |
+| `node` | `package.json` (no `react` dependency) | No `require()` in ESM, no sync fs in handlers, async error handling, no DB calls in routes |
+| `java` | `pom.xml` / `build.gradle` | Thin controllers, DTOs not entities, constructor injection, no field injection |
+| `python` | `requirements.txt` / `pyproject.toml` / `setup.py` / `Pipfile` | No bare `except`, no mutable default args, type hints, no string-built SQL |
+| `salesforce` | `sfdx-project.json` | No SOQL/DML in loops, `with sharing` declared, no hardcoded IDs, trigger handler pattern |
+| `flutter` | `pubspec.yaml` | No HTTP/business logic in widgets, `mounted` check after async gaps, no empty catch, no `print()` |
+| `fullstack` | `package.json` + `pom.xml` | React + Java rules combined |
+
+Every stack also gets the `common` rules (no hardcoded secrets, no dead code, conventional commits) and the `env` rules — `.env`/`.env.*` files are scanned for real secret values regardless of stack.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -29,7 +45,7 @@ kinet init                  # initialise KINET in this project
 ```
 
 `kinet init` will:
-1. Detect your stack (React / Java / fullstack)
+1. Detect your stack (React / Node / Java / Python / Salesforce / Flutter / fullstack)
 2. Distil project context from the codebase
 3. Generate `CLAUDE.md` (commit this file)
 4. Install `.claude/commands/` with `/plan`, `/commit`, `/pr-review`, `/security`
