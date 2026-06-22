@@ -1,5 +1,5 @@
 {
-  "name": "kinet",
+  "name": "kinet-ai",
   "version": "1.0.0",
   "description": "AI assistant bridge for React/Java repo ecosystems — context, rules, commands, and skills",
   "type": "module",
@@ -7,6 +7,14 @@
     "kinet": "./bin/kinet.js"
   },
   "main": "./src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sorabh2008/kinet.git"
+  },
+  "homepage": "https://github.com/sorabh2008/kinet#readme",
+  "bugs": {
+    "url": "https://github.com/sorabh2008/kinet/issues"
+  },
   "files": [
     "bin",
     "src",
