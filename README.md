@@ -47,10 +47,11 @@ kinet init                  # initialise KINET in this project
 `kinet init` will:
 1. Detect your stack (React / Node / Java / Python / Salesforce / Flutter / fullstack)
 2. Distil project context from the codebase
-3. Generate `CLAUDE.md` (commit this file)
+3. Generate `CLAUDE.md`
 4. Install `.claude/commands/` with `/plan`, `/commit`, `/pr-review`, `/security`
 5. Configure the KINET MCP server in `.claude/settings.json`
 6. Create `.kinet/` with context, rules, memory, and PRP files
+7. Add `.claude`, `.kinet`, `CLAUDE.md`, and `kinet.config.json` to `.gitignore` (KINET's output is local by default — remove these lines if you want to share it via git)
 
 ---
 
@@ -79,7 +80,7 @@ Once initialised, these are available inside Claude Code:
 | Command | What it does |
 |---------|-------------|
 | `/plan <feature>` | Generates a scoped implementation plan aligned to your stack and patterns |
-| `/commit` | Validates staged changes against rules, generates a Conventional Commit message |
+| `/commit` | Validates staged changes against rules (including secret scanning of any staged `.env*` files), generates a Conventional Commit message |
 | `/pr-review` | Reviews the current branch diff against KINET rules and team conventions |
 | `/security [path]` | OWASP-focused security audit of changed or specified files |
 
@@ -114,8 +115,8 @@ The KINET MCP server exposes these tools to AI assistants:
 
 ```
 your-project/
-├── CLAUDE.md                  ← AI context (commit this)
-├── kinet.config.json          ← KINET config
+├── CLAUDE.md                  ← AI context (gitignored by default)
+├── kinet.config.json          ← KINET config (gitignored by default)
 ├── .kinet/
 │   ├── context/
 │   │   └── distilled.json     ← auto-generated context
@@ -177,9 +178,12 @@ To add a validator for programmatic enforcement — extend `.kinet/rules/validat
 ```bash
 # Day 1
 cd my-app
-kinet init
-git add CLAUDE.md kinet.config.json .kinet/ .claude/
-git commit -m "chore: initialise KINET"
+kinet init                              # CLAUDE.md, .kinet/, .claude/, kinet.config.json are gitignored by default
+
+# Optional — share KINET's setup with your team instead of keeping it local:
+# remove the "# KINET" block from .gitignore, then:
+# git add CLAUDE.md kinet.config.json .kinet/ .claude/
+# git commit -m "chore: initialise KINET"
 
 # Working session
 # Open Claude Code — it loads CLAUDE.md automatically

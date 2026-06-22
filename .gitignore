@@ -3,3 +3,12 @@ dist/
 *.log
 .env
 .env.local
+.claude
+.kinet
+bin
+
+package-lock.json
+
+# KINET — generated/local files (remove these lines to commit them instead)
+CLAUDE.md
+kinet.config.json

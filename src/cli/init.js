@@ -10,12 +10,17 @@ import { PrpSystem } from '../prp/system.js';
 import { generateClaudeMd } from '../context/claude-md.js';
 import { installClaudeCommands } from '../commands/installer.js';
 import { KINET_DIR, KINET_CONFIG_FILE, templatePath } from '../utils/paths.js';
+import { updateGitignore } from '../utils/gitignore.js';
 
 export async function runInit(opts) {
   const cwd = process.cwd();
   const kinetDir = join(cwd, KINET_DIR);
 
   console.log(chalk.cyan('\n  KINET — AI Assistant Bridge\n'));
+
+  if (updateGitignore(cwd)) {
+    console.log(chalk.dim('  Added .claude, .kinet, CLAUDE.md, kinet.config.json to .gitignore'));
+  }
 
   if (existsSync(join(cwd, KINET_CONFIG_FILE))) {
     console.log(chalk.yellow('  KINET already initialised. Run `kinet update` to refresh.'));
@@ -185,14 +190,17 @@ function printSummary(cwd, config) {
   console.log(`
   ${chalk.bold('What was created:')}
 
-  ${chalk.green('✓')} CLAUDE.md              — AI context file (commit this)
-  ${chalk.green('✓')} .kinet/                — KINET data directory
+  ${chalk.green('✓')} CLAUDE.md              — AI context file (gitignored by default)
+  ${chalk.green('✓')} .kinet/                — KINET data directory (gitignored by default)
   ${chalk.green('✓')} .kinet/context/        — Distilled project context
   ${chalk.green('✓')} .kinet/rules/          — Enforced coding rules
   ${chalk.green('✓')} .kinet/memory/         — Persistent AI memories
   ${chalk.green('✓')} .kinet/prp/            — Project Requirements & Patterns
   ${chalk.green('✓')} .claude/commands/      — AI slash commands (Plan/Commit/PR/Security)
   ${chalk.green('✓')} .claude/settings.json  — MCP server config
+
+  ${chalk.dim('.claude, .kinet, CLAUDE.md and kinet.config.json were added to .gitignore.')}
+  ${chalk.dim('To share them with your team, remove the KINET block from .gitignore and commit them.')}
 
   ${chalk.bold('Available commands in Claude Code:')}
 
