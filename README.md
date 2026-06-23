@@ -39,7 +39,7 @@ Every stack also gets the `common` rules (no hardcoded secrets, no dead code, co
 ## Quick Start
 
 ```bash
-npm install -g kinet        # install globally
+npm install -g kinet-ai     # install globally
 cd your-project
 kinet init                  # initialise KINET in this project
 ```
@@ -215,7 +215,7 @@ For shared rules across a monorepo, create a root-level `.kinet/rules/shared.md`
 ```yaml
 # .github/workflows/kinet.yml
 - name: KINET validate
-  run: npx kinet validate --json
+  run: npx kinet-ai validate --json
 ```
 
 ---
