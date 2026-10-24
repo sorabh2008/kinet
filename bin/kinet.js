@@ -29,6 +29,7 @@ program
   .option('--context', 'refresh context distillation only')
   .option('--rules', 're-apply rules templates only')
   .option('--memory', 'rebuild memory index only')
+  .option('--team', 're-link the delivery team (agents, commands, skills) only')
   .action(async (opts) => {
     const { runUpdate } = await import('../src/cli/update.js');
     await runUpdate(opts);

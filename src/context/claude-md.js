@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { KINET_DIR } from '../utils/paths.js';
+import { listTeam, teamContextImports, teamDir } from '../team/installer.js';
 
 /**
  * Generates the CLAUDE.md file that AI assistants load as their primary context.
@@ -18,6 +19,7 @@ export async function generateClaudeMd(context, rulesEngine, config) {
     patternsSection(context),
     rulesSection(rules, config.stack),
     testingSection(context),
+    teamSection(),
     commandsSection(),
     skillsSection(config.stack),
     mcpSection(),
@@ -300,6 +302,22 @@ function testingSection(ctx) {
   }
 
   return lines.join('\n');
+}
+
+function teamSection() {
+  const dir = teamDir();
+  const imports = teamContextImports(dir);
+  if (!imports.length) return '';
+  const { agents, commands } = listTeam(dir);
+  const commandRows = commands.map(c => `\`/${c}\``).join(', ');
+  return `## Delivery Team
+
+Every task in this repo is handled by the delivery team: assign it to the owning role, work as that role, then run the \`retro\` skill.
+Roles (also available as subagents): ${agents.map(a => `\`${a}\``).join(', ')}.${commandRows ? `\nTeam commands: ${commandRows}.` : ''}
+The team's ways of working and routing rules are imported below and live in \`${dir}\` — edit them there, not here.
+
+${imports.map(path => `@${path}`).join('\n')}
+`;
 }
 
 function commandsSection() {

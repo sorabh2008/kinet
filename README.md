@@ -17,6 +17,7 @@ KINET makes every AI interaction in your project aware of your stack, patterns, 
 | **PRP System** | Project Requirements & Patterns — human-authored context that can't be auto-detected |
 | **Memory Store** | Persistent AI memories scoped to your project, queryable via MCP |
 | **MCP Server** | Gives AI tools: web search, GitHub search, context/rules/memory on demand |
+| **Delivery Team** | Links your personal team — role agents, team commands, skills, ways of working — into every project (see below) |
 
 ---
 
@@ -63,6 +64,7 @@ kinet update                # Re-scan and refresh context + CLAUDE.md
 kinet update --context      # Refresh context only
 kinet update --rules        # Re-apply rule templates only
 kinet update --memory       # Rebuild memory index only
+kinet update --team         # Re-link the delivery team only
 kinet validate              # Check codebase against rules, exit 1 on violations
 kinet validate --fix        # Auto-fix safe violations
 kinet validate --json       # Machine-readable output
@@ -83,6 +85,29 @@ Once initialised, these are available inside Claude Code:
 | `/commit` | Validates staged changes against rules (including secret scanning of any staged `.env*` files), generates a Conventional Commit message |
 | `/pr-review` | Reviews the current branch diff against KINET rules and team conventions |
 | `/security [path]` | OWASP-focused security audit of changed or specified files |
+
+---
+
+## Delivery Team
+
+KINET can wire a personal delivery team into every project it initialises. The team lives **outside** KINET in a team dir — `~/second-brain/_shared` by default, override with `KINET_TEAM_DIR` — so your own personas and ways of working never ship in this package:
+
+```
+<team dir>/
+├── agents/*.md            ← role agents (Claude Code subagent format)
+├── commands/*.md          ← team slash commands
+├── skills/<name>/SKILL.md ← team skills (e.g. retro)
+├── knowledge/ways-of-working.md, coding-standards.md
+└── team-lead.md           ← routing rules: assign a role, execute, retro
+```
+
+`kinet init` and `kinet update` (or `kinet update --team` alone):
+
+1. Symlink `agents/`, `commands/` and `skills/` into the project's `.claude/` — links, not copies, so edits in the team dir apply to every project immediately. Real files and foreign symlinks are never overwritten; stale links are removed.
+2. Add a **Delivery Team** section to `CLAUDE.md` that `@`-imports the ways of working and `team-lead.md`.
+3. Add the team dir's parent to `permissions.additionalDirectories` in `.claude/settings.json`, so sessions can update the team (e.g. an end-of-task retro).
+
+If no team dir exists, this step is skipped and KINET behaves as before.
 
 ---
 

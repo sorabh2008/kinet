@@ -9,6 +9,7 @@ import { MemoryStore } from '../memory/store.js';
 import { PrpSystem } from '../prp/system.js';
 import { generateClaudeMd } from '../context/claude-md.js';
 import { installClaudeCommands } from '../commands/installer.js';
+import { installTeam, teamDir } from '../team/installer.js';
 import { KINET_DIR, KINET_CONFIG_FILE, templatePath } from '../utils/paths.js';
 import { updateGitignore } from '../utils/gitignore.js';
 
@@ -69,12 +70,17 @@ export async function runInit(opts) {
     spinner.text = 'Configuring MCP server...';
     await configureMcp(cwd);
 
-    // 9. Write kinet.config.json
+    // 9. Link the delivery team (agents, commands, skills) from the team dir, if there is one
+    spinner.text = 'Linking delivery team...';
+    const team = installTeam(cwd);
+
+    // 10. Write kinet.config.json
     const finalConfig = { ...config, version: '1.0.0', initAt: new Date().toISOString() };
     writeJson(join(cwd, KINET_CONFIG_FILE), finalConfig);
 
     spinner.succeed(chalk.green('KINET initialised successfully!'));
     printSummary(cwd, config);
+    printTeamSummary(team);
 
   } catch (err) {
     spinner.fail(chalk.red('Initialisation failed'));
@@ -184,6 +190,16 @@ async function configureMcp(cwd) {
 
 function writeJson(path, data) {
   writeFileSync(path, JSON.stringify(data, null, 2));
+}
+
+function printTeamSummary(team) {
+  if (!team) {
+    console.log(chalk.dim(`  No delivery team found at ${teamDir()} (set KINET_TEAM_DIR to use one).\n`));
+    return;
+  }
+  console.log(`  ${chalk.green('✓')} Delivery team from ${teamDir()} — ${team.linked.length} linked into .claude/`);
+  for (const reason of team.skipped) console.log(chalk.yellow(`    skipped ${reason}`));
+  console.log('');
 }
 
 function printSummary(cwd, config) {

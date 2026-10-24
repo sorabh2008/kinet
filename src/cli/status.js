@@ -24,6 +24,7 @@ export async function runStatus() {
     { label: '.kinet/prp/',         path: join(KINET_DIR, 'prp') },
     { label: '.claude/commands/',   path: join('.claude', 'commands') },
     { label: '.claude/settings.json', path: join('.claude', 'settings.json') },
+    { label: '.claude/agents/ (team)', path: join('.claude', 'agents') },
   ];
 
   for (const { label, path } of checks) {
