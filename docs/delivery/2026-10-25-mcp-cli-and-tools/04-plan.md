@@ -81,7 +81,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/mcp/http.test.js src/cli/mcp-routing.test.js`, then manually run `node bin/kinet.js mcp --port 7399` and, in another shell, `curl -si -H 'Host: evil.example' http://127.0.0.1:7399/sse` (expect 403).
   - Commit: `fix(mcp): route SSE sessions per connection and bind HTTP to 127.0.0.1`
 
-- [ ] **S10 — Daemon `start` and `status`, plus the commander parent**
+- [x] **S10 — Daemon `start` and `status`, plus the commander parent**
   - Files: `src/mcp/runstate.js` + `runstate.test.js` (lock and stale-lock rules, `checkIdentity`); `src/cli/mcp.js` (`runMcpStart`, `runMcpStatus`, `abortStart`, `formatUptime`, `lastLines`) + `src/cli/mcp.test.js`; `bin/kinet.js` (`enablePositionalOptions` on `program` and `mcp`, `allowExcessArguments`, the unknown-subcommand error, help text, and the `start` and `status` subcommands); the start/status parts of `mcp-lifecycle.test.js`.
   - Build the unknown-subcommand error message from the subcommands that are actually registered, so it is accurate in every slice. After S12 it reads exactly as 03 §5.1 specifies.
   - ACs: 7.1-7.6, 8.1-8.4, 6.5, 6.6, 6.4, review-2 findings 2 and 5.

@@ -8,8 +8,12 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { BIN_PATH, REPO_ROOT, tempDir, freePort, waitFor } from '../test-support/helpers.js';
+import { BIN_PATH, REPO_ROOT, tempDir, freePort, waitFor, runCli } from '../test-support/helpers.js';
+import { parsePort } from '../utils/args.js';
 import { TOOL_DEFINITIONS } from '../mcp/server.js';
+
+// Grows as slices land; 03 §5.1 final form is 'start, stop, status, logs'.
+const VALID_SUBCOMMANDS = 'start, status';
 
 test('bare `kinet mcp` serves MCP over stdio with only protocol on stdout (AC-6.1, AC-6.3)', async () => {
   const cwd = await tempDir();
@@ -80,4 +84,32 @@ test('`kinet mcp --port` serves two SSE clients at once and guards the routes (A
     assert.equal(code, 0);
   }
   assert.match(stderr(), /WARN shutdown reason=SIGTERM/);
+});
+
+test('`kinet mcp --help` lists the subcommands and explains stdio mode (AC-6.5)', async () => {
+  const { code, stdout } = await runCli(['mcp', '--help']);
+  assert.equal(code, 0);
+  for (const word of ['start', 'stop', 'status', 'logs', 'stdio']) assert.ok(stdout.includes(word), word);
+});
+
+test('an unknown subcommand exits non-zero and names the valid ones (AC-6.6)', async () => {
+  const started = Date.now();
+  const { code, stderr } = await runCli(['mcp', 'foo'], { cwd: await tempDir() });
+  assert.notEqual(code, 0);
+  assert.ok(Date.now() - started < 3000);
+  assert.match(stderr, /unknown subcommand 'foo'/);
+  assert.match(stderr, new RegExp(`Valid: ${VALID_SUBCOMMANDS}`));
+});
+
+test('parent --port is refused for subcommands other than start', async () => {
+  const { code, stderr } = await runCli(['mcp', '--port', '1', 'status'], { cwd: await tempDir() });
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--port only applies/);
+});
+
+test('--port must be an integer 1-65535', async () => {
+  assert.throws(() => parsePort('80abc'));
+  const { code, stderr } = await runCli(['mcp', '--port', '80abc'], { cwd: await tempDir() });
+  assert.notEqual(code, 0);
+  assert.match(stderr, /must be an integer 1-65535/);
 });

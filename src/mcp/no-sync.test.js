@@ -22,14 +22,7 @@ test('new code uses no synchronous blocking calls (AC-0.9)', async () => {
   ];
   assert.equal(localTools.length, 5);
   for (const file of files) {
-    let source;
-    try {
-      source = await readFile(join(SRC, file), 'utf8');
-    } catch (err) {
-      // http.js and runstate.js land in later slices.
-      if (err.code === 'ENOENT') continue;
-      throw err;
-    }
+    const source = await readFile(join(SRC, file), 'utf8');
     assert.equal(BLOCKING_CALLS.test(source), false, `${file} uses a *Sync call`);
   }
 });
