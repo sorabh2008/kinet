@@ -93,9 +93,9 @@ kinet mcp stop
 
 **Security notes**
 
-- **Behaviour change:** `kinet mcp --port <n>` and `kinet mcp start` now bind to `127.0.0.1` only (previously `--port` listened on all interfaces). A `--host` option is not available yet.
+- **Behaviour change:** `kinet mcp --port <n>` and `kinet mcp start` now bind to `127.0.0.1` only (previously `--port` listened on all interfaces). A `--host` option is not available yet; it will only come after the MCP routes are token-gated.
 - Requests whose `Host` header is not `127.0.0.1:<port>`/`localhost:<port>`, or that carry a foreign browser `Origin`, are refused (blocks DNS rebinding from web pages).
-- The MCP routes themselves (`/sse`, `/messages`) are **not token-gated**: while the background server runs, any local process or user on the machine can call its tools, including `kinet_run_script`. Only run it on a machine you do not share. (Wording pending Security sign-off.)
+- The MCP routes themselves (`/sse`, `/messages`) are **not token-gated**: while the background server runs, any other local user account or process on the machine can call its tools as you, including `kinet_run_script` (your project's npm scripts, with your environment) and `kinet_git_diff`. Only run it on a machine you do not share. Token-gating these routes is planned and will ship before any `--host` option.
 - If the server is force-killed (`kill -9`, or the `stop` fallback), an npm script started by `kinet_run_script` that is still running can be left orphaned. A normal `stop`, SIGTERM or Ctrl-C kills it.
 - Windows is best effort: the lifecycle commands and git tools should work, but `kinet_run_script` and `kinet_check_deps` refuse on Windows in this version. macOS and Linux are supported.
 
