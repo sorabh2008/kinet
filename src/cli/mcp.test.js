@@ -33,7 +33,7 @@ test('abortStart kills the detached child and removes the lock (review-2 finding
 
 // A fake daemon that passes the identity check but ignores /shutdown.
 const STUBBORN_SERVER = `
-const http = require('http');
+import http from 'node:http';
 const [port, token] = process.argv.slice(1);
 http.createServer((req, res) => {
   if (req.headers['x-kinet-token'] !== token) return res.writeHead(401).end();
@@ -58,7 +58,7 @@ test('stop force-kills a server that ignores /shutdown (AC-9.1, R3-3b)', { skip:
   const cwd = await tempDir();
   const port = await freePort();
   const token = 'c'.repeat(64);
-  const child = spawn(process.execPath, ['-e', STUBBORN_SERVER, String(port), token], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, ['--input-type=module', '-e', STUBBORN_SERVER, String(port), token], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
   let ready = '';
   child.stdout.setEncoding('utf8').on('data', (d) => { ready += d; });
   await waitFor(() => ready === 'ready');

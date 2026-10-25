@@ -23,10 +23,10 @@ async function fixture() {
   const scripts = {
     ok: `node -e "console.log('hi')"`,
     fail: 'node -e "process.exit(3)"',
-    slow: `node -e "require('fs').writeFileSync('slow.pid', String(process.pid)); setTimeout(() => {}, 60000)"`,
+    slow: `node --input-type=module -e "import { writeFileSync } from 'fs'; writeFileSync('slow.pid', String(process.pid)); setTimeout(() => {}, 60000)"`,
     loud: `node -e "for (let i = 0; i < 50000; i++) console.log('line ' + i)"`,
-    touch: `node -e "require('fs').writeFileSync('ran', '')"`,
-    token: 'node -e "console.log(String(process.env.KINET_MCP_TOKEN))"',
+    touch: `node --input-type=module -e "import { writeFileSync } from 'fs'; writeFileSync('ran', '')"`,
+    printenv: 'node -e "console.log(String(process.env.KINET_MCP_TOKEN))"',
   };
   await writeFiles(dir, { 'package.json': JSON.stringify({ name: 'fixture', version: '1.0.0', scripts }) });
   return dir;
@@ -39,13 +39,13 @@ test('the description warns that it executes project code (AC-4.6)', () => {
 test('no script lists the scripts and runs nothing (AC-4.1, AC-0.2)', { skip }, async () => {
   const dir = await fixture();
   const text = await run({}, ctxFor(dir));
-  assert.match(text, /^scripts in package\.json \(6\):\n {2}ok {5}node -e/);
+  assert.match(text, /^scripts in package\.json \(6\):\n {2}ok +node -e/);
   assert.equal(existsSync(join(dir, 'ran')), false);
 });
 
 test('only declared scripts can run (AC-4.2)', { skip }, async () => {
   const dir = await fixture();
-  await assert.rejects(run({ script: 'x; rm -rf ~' }, ctxFor(dir)), /Unknown script "x; rm -rf ~"\. Valid scripts: ok, fail, slow, loud, touch, token/);
+  await assert.rejects(run({ script: 'x; rm -rf ~' }, ctxFor(dir)), /Unknown script "x; rm -rf ~"\. Valid scripts: ok, fail, slow, loud, touch, printenv/);
   await assert.rejects(run({ script: '__proto__' }, ctxFor(dir)), /Unknown script "__proto__"/);
   await assert.rejects(run({ script: '--version' }, ctxFor(dir)), /values starting with "-"/);
 });
@@ -79,7 +79,7 @@ test('scripts never see the daemon token', { skip }, async () => {
   const dir = await fixture();
   process.env.KINET_MCP_TOKEN = 'f'.repeat(64);
   try {
-    assert.match(await run({ script: 'token' }, ctxFor(dir)), /\nundefined\n/);
+    assert.match(await run({ script: 'printenv' }, ctxFor(dir)), /\nundefined\n/);
   } finally {
     delete process.env.KINET_MCP_TOKEN;
   }

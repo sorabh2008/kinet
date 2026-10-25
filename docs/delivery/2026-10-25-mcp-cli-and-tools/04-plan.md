@@ -101,7 +101,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/cli/mcp-lifecycle.test.js`, then `node bin/kinet.js mcp start && node bin/kinet.js mcp logs -n 5 && node bin/kinet.js mcp stop`.
   - Commit: `feat(cli): add kinet mcp logs with tail and follow`
 
-- [ ] **S13 — README and packaging check**
+- [x] **S13 — README and packaging check**
   - Files: `README.md` (14-row MCP Tools table; `kinet mcp start|stop|status|logs`; default port 7345; URL `http://127.0.0.1:7345/sse`; `--port` now binds to 127.0.0.1 only; MCP routes are not token-gated (any local process can call them while the daemon runs), with wording to be confirmed by Security in 6b; T3 matches uppercase markers only; Windows is best effort and T4/T5 refuse on Windows; SIGKILL can orphan a running script); `src/readme.test.js`.
   - ACs: 0.7, 11.3.
   - Verify by: `npm run lint && npm test && npm pack --dry-run` (no `*.test.js` and no `test-support` files in the tarball).

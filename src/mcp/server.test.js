@@ -42,7 +42,7 @@ test('tools/list keeps the 9 core tools first and adds the local tools (AC-0.1)'
 test('every tool call is logged by name and outcome, never by argument', async () => {
   const log = silentLog();
   const client = await connectClient(log);
-  const result = await client.callTool({ name: 'kinet_no_such_tool', arguments: { secret: 'SECRET_ARG' } });
+  const result = await client.callTool({ name: 'kinet_no_such_tool', arguments: { query: 'SECRET_ARG' } });
   assert.equal(result.isError, true);
   assert.equal(log.calls.length, 1);
   const [name, ms, ok] = log.calls[0];
