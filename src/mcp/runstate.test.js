@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { readFile, utimes, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, stat, symlink, utimes, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   acquireLock, ensureRunDir, runPaths, readState, writeState, clearState, checkIdentity, isPidAlive, LockHeldError,
+  UnsafeRunDirError, LOG_OPEN_FLAGS,
 } from './runstate.js';
 import { tempDir, freePort } from '../test-support/helpers.js';
 
@@ -91,4 +93,49 @@ test('checkIdentity: no state is stopped; dead pid or wrong server is stale; not
   assert.equal(identity.state, 'stale');
   assert.match(identity.reason, /health check failed/);
   assert.notEqual(await readState(cwd), null);
+});
+
+const posixOnly = { skip: process.platform === 'win32' };
+
+test('writeState does not follow a symlink planted at the temp path (06-security finding 1)', posixOnly, async () => {
+  const cwd = await tempDir();
+  const victim = join(await tempDir(), 'victim.txt');
+  await writeFile(victim, 'keep me\n');
+  await ensureRunDir(cwd);
+  await symlink(victim, runPaths(cwd).tmp);
+
+  await writeState(cwd, { pid: 1, token: 'secret-token' });
+
+  assert.equal(await readFile(victim, 'utf8'), 'keep me\n');
+  assert.equal((await lstat(runPaths(cwd).state)).isSymbolicLink(), false);
+  assert.equal((await stat(runPaths(cwd).state)).mode & 0o777, 0o600);
+  assert.deepEqual(await readState(cwd), { pid: 1, token: 'secret-token' });
+});
+
+test('ensureRunDir refuses a symlinked .kinet or .kinet/run and creates the dir 0700', posixOnly, async () => {
+  const elsewhere = await tempDir();
+
+  const linkedKinet = await tempDir();
+  await symlink(elsewhere, join(linkedKinet, '.kinet'));
+  await assert.rejects(ensureRunDir(linkedKinet), UnsafeRunDirError);
+
+  const linkedRun = await tempDir();
+  await mkdir(join(linkedRun, '.kinet'));
+  await symlink(elsewhere, join(linkedRun, '.kinet', 'run'));
+  await assert.rejects(ensureRunDir(linkedRun), UnsafeRunDirError);
+  assert.equal(existsSync(join(elsewhere, '.gitignore')), false);
+
+  const fresh = await tempDir();
+  await ensureRunDir(fresh);
+  assert.equal((await stat(runPaths(fresh).dir)).mode & 0o777, 0o700);
+});
+
+test('the log open flags refuse a symlinked log file', posixOnly, async () => {
+  const cwd = await tempDir();
+  const victim = join(await tempDir(), 'victim.log');
+  await writeFile(victim, 'keep\n');
+  await ensureRunDir(cwd);
+  await symlink(victim, runPaths(cwd).log);
+  await assert.rejects(open(runPaths(cwd).log, LOG_OPEN_FLAGS, 0o600), (err) => err.code === 'ELOOP');
+  assert.equal(await readFile(victim, 'utf8'), 'keep\n');
 });

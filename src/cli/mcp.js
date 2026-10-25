@@ -6,6 +6,7 @@ import { open, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
   ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, LockHeldError,
+  UnsafeRunDirError, LOG_OPEN_FLAGS,
 } from '../mcp/runstate.js';
 
 const BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url));
@@ -105,7 +106,7 @@ async function rotateLog(paths) {
 }
 
 async function spawnDaemon(cwd, port, token, logPath) {
-  const logFile = await open(logPath, 'a', 0o600);
+  const logFile = await open(logPath, LOG_OPEN_FLAGS, 0o600);
   try {
     // The token goes in the environment, not argv, so it never shows up in `ps`.
     return spawn(process.execPath, [BIN_PATH, 'mcp', '--port', String(port)], {
@@ -132,7 +133,13 @@ async function reportStartFailure(result, port, logPath) {
 
 export async function runMcpStart({ port }) {
   const cwd = process.cwd();
-  const paths = await ensureRunDir(cwd);
+  let paths;
+  try {
+    paths = await ensureRunDir(cwd);
+  } catch (err) {
+    if (err instanceof UnsafeRunDirError) return fail(err.message);
+    throw err;
+  }
   let release;
   try {
     release = await acquireLock(cwd);

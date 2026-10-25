@@ -2,7 +2,8 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, symlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { connect, createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { appendFile } from 'node:fs/promises';
@@ -212,4 +213,14 @@ test('logs without a log file explains what to do (AC-10.4)', { skip }, async ()
   const result = await runCli(['mcp', 'logs'], { cwd });
   assert.equal(result.code, 1);
   assert.match(result.stderr, /no logs — has `kinet mcp start` been run\?/);
+});
+
+test('start refuses a symlinked .kinet planted by a cloned repo (06-security finding 1)', { skip }, async () => {
+  const cwd = await project();
+  const elsewhere = await tempDir();
+  await symlink(elsewhere, join(cwd, '.kinet'));
+  const result = await runCli(['mcp', 'start', '--port', String(await freePort())], { cwd });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /is a symlink/);
+  assert.equal(existsSync(join(elsewhere, 'run')), false);
 });

@@ -1,6 +1,7 @@
 // Run state for the background MCP server, kept per project in <cwd>/.kinet/run/.
 // Used by the CLI side only; the daemon itself never writes these files.
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const DEFAULT_PORT = 7345;
@@ -14,6 +15,11 @@ export class LockHeldError extends Error {
     this.pid = pid;
   }
 }
+
+export class UnsafeRunDirError extends Error {}
+
+// Append-only log open that refuses a symlink planted at the log path.
+export const LOG_OPEN_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | (constants.O_NOFOLLOW ?? 0);
 
 export function runPaths(cwd) {
   const dir = join(cwd, '.kinet', 'run');
@@ -37,10 +43,21 @@ async function ignoreMissing(promise) {
   }
 }
 
+async function refuseSymlink(p) {
+  const info = await ignoreMissing(lstat(p));
+  if (info?.isSymbolicLink()) {
+    throw new UnsafeRunDirError(`refusing to use ${p}: it is a symlink. Remove it and try again.`);
+  }
+}
+
 // The run dir ignores itself, so run files are never committed even without `kinet init`.
+// A cloned repo could plant `.kinet` or `.kinet/run` as symlinks to redirect our writes,
+// so both are refused if they are links (06-security finding 1).
 export async function ensureRunDir(cwd) {
   const paths = runPaths(cwd);
-  await mkdir(paths.dir, { recursive: true });
+  await refuseSymlink(join(cwd, '.kinet'));
+  await refuseSymlink(paths.dir);
+  await mkdir(paths.dir, { recursive: true, mode: 0o700 });
   try {
     await writeFile(paths.gitignore, '*\n', { flag: 'wx' });
   } catch (err) {
@@ -60,9 +77,17 @@ export async function readState(cwd) {
 }
 
 // Written to a temp file then renamed, so readers never see a half-written file.
+// The temp file is unlinked and re-created with O_EXCL ('wx'), which never follows
+// a symlink planted at that path.
 export async function writeState(cwd, state) {
   const { tmp, state: target } = runPaths(cwd);
-  await writeFile(tmp, JSON.stringify(state), { mode: 0o600 });
+  await ignoreMissing(unlink(tmp));
+  const handle = await open(tmp, 'wx', 0o600);
+  try {
+    await handle.writeFile(JSON.stringify(state));
+  } finally {
+    await handle.close();
+  }
   await rename(tmp, target);
 }
 
