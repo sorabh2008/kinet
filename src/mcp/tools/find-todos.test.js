@@ -81,6 +81,8 @@ test('the scan path comes after the -- separator as a literal pathspec (AC-0.8b)
   assert.ok(args.indexOf('--') >= 0 && args.indexOf('--') < args.indexOf(':(literal)src'));
 });
 
+// The :(literal) prefix also means the user's path is never glob-expanded;
+// the schema only promises "subdirectory or file".
 test('pathspec magic in path cannot reach outside a subdirectory project (06-security finding 3)', async () => {
   const root = await gitRepo(await tempDir(), { 'other/x.js': `// ${MARKER} outside the project\n` });
   const app = join(root, 'app');

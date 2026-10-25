@@ -85,6 +85,15 @@ test('pathspec magic cannot reach outside a subdirectory project (06-security fi
   }
 });
 
+// Literal pathspecs also mean user paths are never glob-expanded: `a*.js` names a
+// file called "a*.js", not every matching file. The schema promises a file or directory.
+test('paths are literal, not globs', async () => {
+  const dir = await repo();
+  await writeFile(join(dir, 'a.js'), 'a\nchanged\n');
+  assert.match(await run({ path: 'a*.js' }, ctxFor(dir)), /^No changes/);
+  assert.match(await run({ path: 'a.js' }, ctxFor(dir)), /\+changed/);
+});
+
 test('paths come after the -- separator (AC-0.8b)', () => {
   const args = buildDiffArgs({ scope: 'working', path: 'src' }, { stat: false });
   assert.equal(args[0], '--literal-pathspecs');
