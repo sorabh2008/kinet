@@ -4,13 +4,14 @@ import { randomBytes } from 'node:crypto';
 import { open, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  ensureRunDir, writeState, clearState, acquireLock, probeHealth, checkIdentity, LockHeldError,
+  ensureRunDir, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, LockHeldError,
 } from '../mcp/runstate.js';
 
 const BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url));
 const HEALTH_TIMEOUT_MS = 4000;
 const POLL_MS = 100;
 const PORT_IN_USE_EXIT = 3;
+const STOP_GRACE_MS = 5000;
 const IS_WINDOWS = process.platform === 'win32';
 
 function out(text) {
@@ -189,4 +190,50 @@ export async function runMcpStatus() {
     out('stopped');
   }
   process.exitCode = 1;
+}
+
+async function requestShutdown(port, token) {
+  try {
+    await fetch(`http://127.0.0.1:${port}/shutdown`, {
+      method: 'POST',
+      headers: { 'X-Kinet-Token': token },
+      signal: AbortSignal.timeout(1000),
+    });
+  } catch {
+    // A server that does not answer is force-killed below.
+  }
+}
+
+async function waitForExit(pid, graceMs, pollMs) {
+  const deadline = Date.now() + graceMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) return true;
+    await sleep(pollMs);
+  }
+  return !isPidAlive(pid);
+}
+
+// Signals only a process that checkIdentity has just confirmed is this
+// project's server (AC-9.3); graceMs/pollMs are injectable for tests.
+export async function runMcpStop({ cwd = process.cwd(), graceMs = STOP_GRACE_MS, pollMs = POLL_MS } = {}) {
+  const identity = await checkIdentity(cwd);
+  if (identity.state === 'stopped') return out('not running');
+  if (identity.state === 'stale') {
+    await clearState(cwd);
+    return out('not running (cleared stale state)');
+  }
+
+  const { pid, port, token } = identity.info;
+  await requestShutdown(port, token);
+  let forced = false;
+  if (!(await waitForExit(pid, graceMs, pollMs))) {
+    try {
+      process.kill(pid, 'SIGKILL');
+      forced = true;
+    } catch (err) {
+      if (err.code !== 'ESRCH') return fail(`could not stop pid ${pid}: ${err.code}`);
+    }
+  }
+  await clearState(cwd);
+  out(forced ? `stopped (pid ${pid}, force-killed after ${graceMs / 1000} s)` : `stopped (pid ${pid})`);
 }

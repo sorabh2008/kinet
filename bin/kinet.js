@@ -96,6 +96,15 @@ mcp
   });
 
 mcp
+  .command('stop')
+  .description('stop the background server for this project')
+  .action(async (opts, command) => {
+    rejectParentPort(command);
+    const { runMcpStop } = await import('../src/cli/mcp.js');
+    await runMcpStop();
+  });
+
+mcp
   .command('status')
   .description('show whether the background server is running (exit 0 running, 1 stopped)')
   .action(async (opts, command) => {

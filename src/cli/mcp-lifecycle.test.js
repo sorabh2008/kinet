@@ -19,10 +19,7 @@ async function project() {
 
 // Never leak a daemon, even when an assertion fails half way.
 after(async () => {
-  for (const cwd of projects) {
-    const state = await readState(cwd);
-    if (state && isPidAlive(state.pid)) process.kill(state.pid, 'SIGKILL');
-  }
+  for (const cwd of projects) await runCli(['mcp', 'stop'], { cwd });
 });
 
 function canConnect(host, port) {
@@ -121,4 +118,42 @@ test('a corrupt state file reads as stopped', { skip }, async () => {
   const result = await runCli(['mcp', 'status'], { cwd });
   assert.equal(result.stdout, 'stopped\n');
   assert.equal(await readFile(runPaths(cwd).state, 'utf8'), '{ nope');
+});
+
+test('stop shuts the server down gracefully and keeps the log (AC-9.1, AC-8.2, AC-10.5)', { skip }, async () => {
+  const cwd = await project();
+  const port = await freePort();
+  assert.equal((await runCli(['mcp', 'start', '--port', String(port)], { cwd })).code, 0);
+  const { pid } = await readState(cwd);
+
+  const stop = await runCli(['mcp', 'stop'], { cwd });
+  assert.equal(stop.code, 0);
+  assert.equal(stop.stdout, `stopped (pid ${pid})\n`);
+  assert.equal(isPidAlive(pid), false);
+
+  const status = await runCli(['mcp', 'status'], { cwd });
+  assert.equal(status.code, 1);
+  assert.equal(status.stdout, 'stopped\n');
+  const log = await readFile(runPaths(cwd).log, 'utf8');
+  assert.match(log, /WARN shutdown reason=http/);
+
+  const again = await runCli(['mcp', 'stop'], { cwd });
+  assert.equal(again.code, 0);
+  assert.equal(again.stdout, 'not running\n');
+});
+
+test('stop never signals an unrelated process that reuses the pid (AC-9.2, AC-9.3)', { skip }, async () => {
+  const cwd = await project();
+  const unrelated = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+  try {
+    await ensureRunDir(cwd);
+    await writeState(cwd, { pid: unrelated.pid, port: await freePort(), token: 'b'.repeat(64), cwd, startedAt: new Date().toISOString(), logPath: runPaths(cwd).log });
+    const result = await runCli(['mcp', 'stop'], { cwd });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, 'not running (cleared stale state)\n');
+    assert.equal(existsSync(runPaths(cwd).state), false);
+    assert.equal(isPidAlive(unrelated.pid), true);
+  } finally {
+    unrelated.kill('SIGKILL');
+  }
 });

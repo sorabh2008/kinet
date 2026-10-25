@@ -13,7 +13,7 @@ import { parsePort } from '../utils/args.js';
 import { TOOL_DEFINITIONS } from '../mcp/server.js';
 
 // Grows as slices land; 03 §5.1 final form is 'start, stop, status, logs'.
-const VALID_SUBCOMMANDS = 'start, status';
+const VALID_SUBCOMMANDS = 'start, stop, status';
 
 test('bare `kinet mcp` serves MCP over stdio with only protocol on stdout (AC-6.1, AC-6.3)', async () => {
   const cwd = await tempDir();

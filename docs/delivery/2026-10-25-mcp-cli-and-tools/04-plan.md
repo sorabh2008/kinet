@@ -88,7 +88,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/cli/mcp.test.js src/cli/mcp-routing.test.js src/cli/mcp-lifecycle.test.js src/mcp/runstate.test.js`, then `node bin/kinet.js mcp start && node bin/kinet.js mcp status; echo $?` (expect `running` and 0). Clean up with `kill <pid>` until S11 lands.
   - Commit: `feat(cli): add kinet mcp start and status for a background server`
 
-- [ ] **S11 — `stop`**
+- [x] **S11 — `stop`**
   - Files: `src/cli/mcp.js` (`runMcpStop`); `bin/kinet.js`; `mcp.test.js`; the stop and stale-state parts of `mcp-lifecycle.test.js`.
   - **[R3-3b]:** `runMcpStop` takes injectable `{ graceMs = 5000, pollMs = 100 }` (or a `waitForExit` function). The test points it at a dummy child that ignores `/shutdown`, using a small `graceMs`. Assert the `force-killed` output, that the dummy process is gone, and that the state is cleared.
   - ACs: 9.1-9.3, 8.2.
