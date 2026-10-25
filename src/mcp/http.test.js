@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
-import { createRequestHandler, isAllowedHost, isAllowedOrigin, tokenMatches, listenLocal } from './http.js';
+import { createRequestHandler, isAllowedHost, isAllowedOrigin, isAllowedFetchSite, acceptsEventStream, tokenMatches, listenLocal } from './http.js';
 import { freePort } from '../test-support/helpers.js';
 
 const TOKEN = 'a'.repeat(64);
@@ -66,7 +66,7 @@ test('binds to 127.0.0.1 only (AC-7.6, AC-6.2)', async () => {
 
 test('a failing route answers 500 and logs instead of crashing (review-2 finding 3)', async () => {
   const { port, log, server } = await startServer(() => ({ token: null }));
-  const res = await send(port, { path: '/sse' });
+  const res = await send(port, { path: '/sse', headers: { accept: 'text/event-stream' } });
   assert.equal(res.status, 500);
   assert.ok(log.lines.some((l) => l.startsWith('ERROR http GET /sse: no session server')));
   server.close();
@@ -98,5 +98,22 @@ test('/health and /shutdown need the token in daemon mode', async () => {
   assert.equal((await send(port, { method: 'POST', path: '/shutdown', headers: { 'x-kinet-token': TOKEN } })).status, 202);
   await new Promise((r) => setImmediate(r));
   assert.deepEqual(shutdowns, ['http']);
+  server.close();
+});
+
+test('/sse refuses browser subresource requests that cannot be MCP clients (06-security finding 4)', async () => {
+  assert.equal(isAllowedFetchSite(undefined), true);
+  assert.equal(isAllowedFetchSite('none'), true);
+  assert.equal(isAllowedFetchSite('cross-site'), false);
+  assert.equal(acceptsEventStream('text/event-stream'), true);
+  assert.equal(acceptsEventStream('image/avif,image/webp,*/*'), false);
+
+  const { port, log, server } = await startServer(() => ({ token: null }));
+  const imgLike = await send(port, { path: '/sse', headers: { accept: 'image/avif,image/webp,*/*', 'sec-fetch-site': 'cross-site' } });
+  assert.equal(imgLike.status, 403);
+  assert.equal((await send(port, { path: '/sse', headers: { accept: 'image/webp,*/*' } })).status, 406);
+  assert.equal((await send(port, { path: '/sse', headers: { accept: 'text/event-stream', 'sec-fetch-site': 'same-site' } })).status, 403);
+  // Only a real event-stream request reaches session creation (which fails in this stub).
+  assert.equal(log.lines.filter((l) => l.startsWith('ERROR http GET /sse')).length, 0);
   server.close();
 });

@@ -14,6 +14,16 @@ export function isAllowedOrigin(origin, port) {
   return origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`;
 }
 
+// Browsers mark cross-site subresource requests (e.g. <img src=".../sse">), which
+// carry no Origin; MCP clients send no Sec-Fetch-Site at all (06-security finding 4).
+export function isAllowedFetchSite(secFetchSite) {
+  return secFetchSite === undefined || secFetchSite === 'same-origin' || secFetchSite === 'none';
+}
+
+export function acceptsEventStream(accept) {
+  return typeof accept === 'string' && accept.includes('text/event-stream');
+}
+
 export function tokenMatches(given, expected) {
   if (typeof given !== 'string' || typeof expected !== 'string') return false;
   const a = Buffer.from(given);
@@ -72,9 +82,13 @@ export function createRequestHandler({ port, token, createSessionServer, log, he
   async function route(req, res, url) {
     if (!isAllowedHost(req.headers.host, port)) return sendText(res, 403, 'Forbidden host');
     if (!isAllowedOrigin(req.headers.origin, port)) return sendText(res, 403, 'Forbidden origin');
+    if (!isAllowedFetchSite(req.headers['sec-fetch-site'])) return sendText(res, 403, 'Forbidden fetch site');
 
     const key = `${req.method} ${url.pathname}`;
-    if (key === 'GET /sse') return openSession(res);
+    if (key === 'GET /sse') {
+      if (!acceptsEventStream(req.headers.accept)) return sendText(res, 406, 'Accept must include text/event-stream');
+      return openSession(res);
+    }
     if (key === 'POST /messages') return postMessage(req, res, url);
     if (key === 'GET /health') {
       if (authorised(req, res)) sendJson(res, 200, { ...healthInfo(), sessions: sessions.size });
