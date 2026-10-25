@@ -104,12 +104,13 @@ test('writeState does not follow a symlink planted at the temp path (06-security
   await ensureRunDir(cwd);
   await symlink(victim, runPaths(cwd).tmp);
 
-  await writeState(cwd, { pid: 1, token: 'secret-token' });
+  const state = { pid: 1, port: 7345, label: 'fixture-state' };
+  await writeState(cwd, state);
 
   assert.equal(await readFile(victim, 'utf8'), 'keep me\n');
   assert.equal((await lstat(runPaths(cwd).state)).isSymbolicLink(), false);
   assert.equal((await stat(runPaths(cwd).state)).mode & 0o777, 0o600);
-  assert.deepEqual(await readState(cwd), { pid: 1, token: 'secret-token' });
+  assert.deepEqual(await readState(cwd), state);
 });
 
 test('ensureRunDir refuses a symlinked .kinet or .kinet/run and creates the dir 0700', posixOnly, async () => {
