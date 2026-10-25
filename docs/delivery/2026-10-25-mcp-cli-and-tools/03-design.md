@@ -399,7 +399,7 @@ duration: 4.2 s
   - `.option('--port <port>', 'run the HTTP/SSE server in the foreground on 127.0.0.1:<port>', parsePort)`
   - `.description('Run the KINET MCP server. Bare `kinet mcp` is the stdio mode Claude Code launches.')`
   - `.addHelpText('after', …)` lists `start [--port <n>]` (default 7345), `stop`, `status`, `logs [-n <lines>] [-f]`, and the line "Bare `kinet mcp` (no subcommand) runs the stdio server used by Claude Code; your .claude/settings.json does not need to change."
-  - The action checks `if (command.args.length) command.error(\`unknown subcommand '${command.args[0]}'. Valid: start, stop, status, logs\`)`. Otherwise it runs `startMcpServer(opts)`, the same as today.
+  - The action checks `if (command.args.length) command.error(\`unknown subcommand '${command.args[0]}'. Valid: start, stop, status, logs\`)` (printed with an `error: ` prefix, exit 1). Otherwise it runs `startMcpServer(opts)`, the same as today.
 - `start`: `.option('--port <port>', …, parsePort)`.
   - Action: `runMcpStart({ port: opts.port ?? cmd.parent.opts().port ?? DEFAULT_PORT })`.
   - **Review-2 finding 5 decision: forward.** `kinet mcp --port 9000 start` starts on 9000. If both are given, the subcommand's value wins.
@@ -659,7 +659,7 @@ Every lifecycle test runs in its own temp cwd on a `freePort()`, and an `after()
 | finding 3 | `http.test.js` | `createRequestHandler` with a `createSessionServer` that throws → the response is 500, the log has `ERROR http GET /sse`, and the handler promise does not reject. Token: `tokenMatches` returns false for a wrong value, a missing value and a different length. `/health` with no token mode → 404. | |
 | finding 4 | `exec.test.js` | `safeExec` spawns `sh -c 'sleep 30 & wait'` (test only), then `killActiveProcessGroups()` → the grandchild is gone, checked with `isPidAlive` on the pid echoed by the script. A child env does not contain `KINET_MCP_TOKEN`. | P |
 | 11.1 | — (Tester) | `npm test` exits 0 and the summary shows `tests N` with N > 0. Node's default reporter prints `ℹ tests N` on a TTY and `# tests N` under TAP. | |
-| 11.2 | — (Tester) | `npm run lint` exits 0. `kinet validate --json` gives `violations: []`, and warnings ≤ baseline + 1 (`src/rules/patterns.js` marker list). | |
+| 11.2 | — (Tester) | `npm run lint` exits 0. `kinet validate --json` gives `violations: []`, and warnings ≤ 33 (accepted in 04-plan Deviations, F-3: the existing ticket rule matches the required `find-todos` name). | |
 | manual | TSR | Ctrl-C during `start`: hard to time automatically. The Tester runs `kinet mcp start` and presses Ctrl-C at once, then checks that `status` shows `stopped`, there is no `mcp.lock`, and no orphan `node … mcp --port` remains (`pgrep -f "kinet.js mcp --port"`). | |
 
 ---

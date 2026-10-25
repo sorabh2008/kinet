@@ -1,9 +1,9 @@
 # 06 — Test plan: MCP lifecycle CLI + 5 solo-dev MCP tools
 
-Stage: Tester (6a) | Branch: `feature/mcp-cli-and-tools` (14 commits over `develop`, head `b9d0f8a`) | Date: 2026-10-25
-Inputs: `01-requirement.md` (ACs), `03-design.md` (build contract), `review-5.md`, the branch source (`bin/kinet.js`, `src/cli/mcp.js`, `src/mcp/**`, `src/utils/{exec,args}.js`, `README.md`).
+Stage: Tester (6a) | Branch: `feature/mcp-cli-and-tools` (revised against head `d5a94e3`: the build commits, the security-stage fixes and the fixes for F-1/F-2/F-4/F-5/F-6. Refresh the head here and in TC-S2 at freeze) | Date: 2026-10-25
+Inputs: `01-requirement.md` (ACs), `03-design.md` (build contract, including the §5.1/§5.3/§5.4/§5.6 amendments for F-1/F-5/F-6), `review-5.md`, `review-6a.md` (all 11 findings addressed in this revision), the branch source (`bin/kinet.js`, `src/cli/mcp.js`, `src/mcp/**`, `src/utils/{exec,args}.js`, `README.md`).
 
-`/test-and-ship` freezes this list and runs it. Every case has an ID, the ACs it traces to, preconditions, copy-paste steps and a measurable expected result. Section 11 holds the AC → TC traceability table. Section 12 lists what the dry run already found.
+`/test-and-ship` freezes this list and runs it. Every case has an ID, the ACs it traces to, preconditions, copy-paste steps and a measurable expected result. Section 12 holds the AC → TC traceability table. Section 13 lists what the dry run already found.
 
 ---
 
@@ -21,7 +21,7 @@ Inputs: `01-requirement.md` (ACs), `03-design.md` (build contract), `review-5.md
 
 | Kind | Cases | How |
 |------|-------|-----|
-| **A**: automated by the repo suite (`npm test`, 100 tests) | Run as part of TC-1. The traceability table names the test that covers each AC. | `npm test` |
+| **A**: automated by the repo suite (`npm test`, N ≥ 117 tests) | Run as part of TC-1. The traceability table names the test that covers each AC. | `npm test` |
 | **S**: scripted here, run by `/test-and-ship` | Most of TC-2 … TC-124 | Copy-paste bash below |
 | **M**: manual, needs a human at a real terminal or client | TC-M1 … TC-M5 | Saurabh, or the tester at a real Terminal.app window |
 
@@ -51,7 +51,7 @@ mcp_raw() { { printf '%s\n' "$INIT" "$NOTE" "$@"; sleep "${MCP_WAIT:-2}"; } | no
 mcp_rpc() { mcp_raw "$@" | node "$TSR/fmt.js"; }
 port_free() { ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 # SSE client: sse_open PORT; sse_post PORT JSON; sse_msgs; sse_close
-sse_open() { : > "$TSR/sse.out"; curl -sN "http://127.0.0.1:$1/sse" > "$TSR/sse.out" & SSE_PID=$!; EP=; for i in $(seq 1 30); do EP=$(grep -m1 '^data: ' "$TSR/sse.out" | sed 's/^data: //' | tr -d '\r'); [ -n "$EP" ] && break; sleep 0.1; done; echo "endpoint=$EP"; }
+sse_open() { : > "$TSR/sse.out"; curl -sN -H 'Accept: text/event-stream' "http://127.0.0.1:$1/sse" > "$TSR/sse.out" & SSE_PID=$!; EP=; for i in $(seq 1 30); do EP=$(grep -m1 '^data: ' "$TSR/sse.out" | sed 's/^data: //' | tr -d '\r'); [ -n "$EP" ] && break; sleep 0.1; done; echo "endpoint=$EP"; }
 sse_post() { curl -s -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' -d "$2" "http://127.0.0.1:$1$EP"; }
 sse_msgs() { grep '^data: {' "$TSR/sse.out" | sed 's/^data: //' | node "$TSR/fmt.js"; }
 sse_close() { kill "$SSE_PID" 2>/dev/null; wait "$SSE_PID" 2>/dev/null; }
@@ -82,7 +82,7 @@ cd "$R" && git branch --show-current && git rev-parse --short HEAD && node -v
 for p in $P_DEF $P1 $P2 $P_BUSY $P_WILD $P_FG $P_FRZ $P_CC $P_OTHER $P_LOCK; do port_free $p || echo "BUSY $p"; done
 pgrep -fl "kinet.js mcp" ; echo "no-stray-servers=$?"
 ```
-Expected: `feature/mcp-cli-and-tools`, `b9d0f8a` (or the frozen head), `v24.x`, no `BUSY` lines, `no-stray-servers=1`.
+Expected: `feature/mcp-cli-and-tools`, the frozen head (`d5a94e3` when this plan was revised), `v24.x`, no `BUSY` lines, `no-stray-servers=1`.
 
 ### TC-S3 Fixtures
 
@@ -134,9 +134,9 @@ Expected: the porcelain lines include ` M src/c.js`, `A  src/staged.js`, `?? not
 
 ## 3. Automated suite and static gates
 
-### TC-1 Full test suite (A). AC-11.1 plus every AC marked "A" in §11
+### TC-1 Full test suite (A). AC-11.1 plus every AC marked "A" in §12
 Steps: `cd /Users/sjain/dev/personal/kinet && npm test; echo "exit=$?"`
-Expected: `exit=0`, `ℹ tests 100` (any N > 0 passes; 100 at freeze), `ℹ fail 0`, `ℹ cancelled 0`. Takes about 4 s. Afterwards `pgrep -fl "kinet.js mcp"` prints nothing, so the suite leaks no daemons.
+Expected: `exit=0`, `ℹ tests N` with N ≥ 117 (117 at `d5a94e3`), `ℹ fail 0`, `ℹ cancelled 0`. Takes about 4 s. Afterwards `pgrep -fl "kinet.js mcp"` prints nothing, so the suite leaks no daemons.
 
 ### TC-2 Lint. AC-11.2
 Steps: `cd /Users/sjain/dev/personal/kinet && npm run lint; echo "exit=$?"`
@@ -147,8 +147,10 @@ Expected: `exit=0` with no error lines.
 cd /Users/sjain/dev/personal/kinet && node bin/kinet.js validate --json > /tmp/kinet-tsr/validate.json; echo "exit=$?"
 node -e 'const r=require("/tmp/kinet-tsr/validate.json");const c={};for(const w of r.warnings)c[w.rule]=(c[w.rule]||0)+1;console.log("violations="+r.violations.length,"warnings="+r.warnings.length,JSON.stringify(c))'
 ```
-Expected: `exit=0`. `violations=0` is the AC. Design budget: `warnings` ≤ 30 (the develop baseline of 29, measured in a temp worktree, plus 1 for `src/rules/patterns.js`).
-**Dry run: violations=0 (AC passes). warnings=32, so the budget is FAILED by 2.** See §12, F-3.
+Expected: `exit=0`, `violations=0 warnings=33 {"no-todo-without-ticket":8,"no-console-log-prod":25}`.
+- `violations=0` is the AC. F-4 is fixed at `d5a94e3`.
+- `warnings=33` is the accepted figure (F-3 is an accepted deviation; see §13). It is the develop baseline of 29, plus 1 for `src/rules/patterns.js`, plus 3 false positives where the validator matches the name `find-todos`/`kinet_find_todos`. More than 33 is a FAIL. Fewer is fine.
+- Dry run at `d5a94e3`: exactly this.
 
 ### TC-4 Packaging excludes tests (design §8)
 Steps: `cd /Users/sjain/dev/personal/kinet && npm pack --dry-run 2>&1 | grep -cE '\.test\.js|test-support'; npm pack --dry-run 2>&1 | grep 'total files'`
@@ -296,12 +298,22 @@ src/a.js 6 XXX false "// XXX"
 None of `myTODOs` (line 5), `node_modules/…`, `src/node_modules/…`, `build/gen.js` (gitignored) or `bin.dat` (binary) appear.
 
 ### TC-35 find_todos filters. AC-3.4
-Steps: same as TC-34 with `'{"missingTicketOnly":true}'`, then `'{"path":"src"}'`, then `'{"path":"src/a.js","missingTicketOnly":true}'` (ids 2, 3, 4).
-Expected: missingTicketOnly gives `total=5 missing=3` with 3 results (lines 1, 3, 6). `path:"src"` gives the same 5 results as TC-34. The file path with missingTicketOnly gives 3 results. The counts are always 5/3.
+```bash
+cd "$FX"; for a in '{"missingTicketOnly":true}' '{"path":"src"}' '{"path":"src/a.js","missingTicketOnly":true}'; do
+  mcp_raw "$(call 2 kinet_find_todos "$a")" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const o=JSON.parse(d.trim().split("\n").map(JSON.parse).find(m=>m.id===2).result.content[0].text);console.log("total="+o.total,"missing="+o.missingTicket,"n="+o.results.length,"lines="+o.results.map(r=>r.line).join(","))})'; done
+```
+Expected, exactly:
+```
+total=5 missing=3 n=3 lines=1,3,6
+total=5 missing=3 n=5 lines=1,2,3,4,6
+total=5 missing=3 n=3 lines=1,3,6
+```
 
 ### TC-36 find_todos outside git (fallback scan). AC-0.2, AC-3.3
-Steps: same as TC-34 but `cd "$PLAIN"`.
-Expected: the same 5 lines and `total=5 missing=3`. No `node_modules/x/i.js` and no `bin.dat`.
+```bash
+cd "$PLAIN"; mcp_raw "$(call 2 kinet_find_todos '{}')" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const o=JSON.parse(d.trim().split("\n").map(JSON.parse).find(m=>m.id===2).result.content[0].text);console.log("total="+o.total,"missing="+o.missingTicket,o.results.map(r=>r.file+":"+r.line).join(","))})'
+```
+Expected: `total=5 missing=3 src/a.js:1,src/a.js:2,src/a.js:3,src/a.js:4,src/a.js:6`. No `node_modules/x/i.js` and no `bin.dat`.
 
 ### TC-38 run_script list mode runs nothing. AC-4.1
 Steps: `cd "$FX"; MCP_MAX=2000 mcp_rpc "$(call 2 kinet_run_script '{}')"`
@@ -337,8 +349,12 @@ Steps: `cd "$FX"; MCP_ORDER=1 MCP_WAIT=5 mcp_rpc "$(call 2 kinet_run_script '{"s
 Expected: the first line is `arrival order: 3,4,2` (or `4,3,2`). id=2 arrives last, about 3 s later, with `timed out`.
 
 ### TC-45 check_deps with no lockfile and no deps. AC-5.3, AC-5.5
-Steps: `cd "$FX"; MCP_WAIT=20 MCP_MAX=2000 mcp_rpc "$(call 2 kinet_check_deps '{}')"`
-Expected: `isError=false`. JSON `{"outdated":{"count":0,"packages":[]},"audit":{"error":"could not check: no lockfile (run npm install to create one)"}}` (pretty-printed). FX `package.json` checksum is unchanged (`shasum package.json` before and after), and no `package-lock.json` is created.
+```bash
+cd "$FX"; sum0=$(shasum package.json)
+MCP_WAIT=20 MCP_MAX=2000 mcp_rpc "$(call 2 kinet_check_deps '{}')"
+[ "$sum0" = "$(shasum package.json)" ] && echo PKG-UNCHANGED; test ! -e package-lock.json && echo NO-LOCKFILE
+```
+Expected: `isError=false`. JSON `{"outdated":{"count":0,"packages":[]},"audit":{"error":"could not check: no lockfile (run npm install to create one)"}}` (pretty-printed). Then `PKG-UNCHANGED`, `NO-LOCKFILE`.
 
 ### TC-46 check_deps section selection. AC-5.3
 Steps: `cd "$FX"; MCP_WAIT=20 MCP_MAX=2000 mcp_rpc "$(call 2 kinet_check_deps '{"check":"audit"}')" "$(call 3 kinet_check_deps '{"check":"outdated"}')" "$(call 4 kinet_check_deps '{"check":"bogus"}')"`
@@ -413,6 +429,28 @@ Expected: `id=2 isError=true "Error: Unknown tool: kinet_nope"`.
 Steps: `cd "$FX"; mcp_rpc "$(call 2 kinet_find_todos '{"path":"nope"}')"`
 Expected: `isError=false "Path not found: nope"`.
 
+### TC-64 Only one script runs at a time (design §4.4)
+Steps: `cd "$FX"; MCP_WAIT=4 MCP_MAX=200 mcp_rpc "$(call 2 kinet_run_script '{"script":"slow","timeoutSeconds":2}')" "$(call 3 kinet_run_script '{"script":"ok"}')"`
+Expected: `id=2 isError=false "script: slow … result: timed out after 2 s; process group killed …"` and `id=3 isError=false "A script is already running (slow); wait for it to finish."`. `slow` holds the slot for 2 s, so the result does not depend on timing.
+
+### TC-62 Pathspec magic is taken literally (06-security finding 3). AC-0.8c
+Steps: `cd "$FX/src"; MCP_MAX=300 mcp_rpc "$(call 2 kinet_git_diff '{"path":":/"}')" "$(call 3 kinet_git_diff '{"path":":(top)package.json"}')" "$(call 4 kinet_find_todos '{"path":":/"}')" "$(call 5 kinet_git_diff '{"path":"*.js"}')" "$(call 6 kinet_git_diff '{}')"` (the server's cwd is a subdirectory of the repo)
+Expected:
+- ids 2, 3 and 5: `No changes (…)`. The magic did not widen the scope to the repo root or a glob. Without the fix, `:/` would show `src/c.js`.
+- id=4: `Path not found: :/`
+- id=6 (control, no path): shows `src/c.js`, so the diff itself works.
+
+### TC-63 A hostile `.git/config` never runs commands (review-6b finding 1, 06-security). AC-0.5. *Uses a copy of FX; FX is not touched.*
+```bash
+rm -rf "$TSR/hostile" "$TSR/hmark" && cp -R "$FX" "$TSR/hostile" && mkdir "$TSR/hmark" && cd "$TSR/hostile"
+for h in fsmonitor textconv external; do printf '#!/bin/sh\ntouch %s/%s-ran\ncat "$1" 2>/dev/null\n' "$TSR/hmark" $h > "$TSR/hmark/$h.sh"; chmod +x "$TSR/hmark/$h.sh"; done
+git config core.fsmonitor "$TSR/hmark/fsmonitor.sh"; git config diff.external "$TSR/hmark/external.sh"; git config diff.evil.textconv "$TSR/hmark/textconv.sh"; printf '*.js diff=evil\n' > .gitattributes
+mcp_rpc "$(call 2 kinet_git_status '{}')" "$(call 3 kinet_git_diff '{}')" "$(call 4 kinet_git_diff '{"scope":"staged"}')" "$(call 5 kinet_git_diff '{"scope":"ref","ref":"main"}')" "$(call 6 kinet_find_todos '{}')" | cut -c1-100
+ls "$TSR/hmark" | grep -c -- '-ran'
+git status >/dev/null 2>&1; ls "$TSR/hmark" | grep -- '-ran'
+```
+Expected: 5 normal results (`branch: feature`, `src/c.js` diff, `src/staged.js` diff, `src/b.js` diff, `total` 5/3), then `0`, so none of the hooks ran. The last line is a control: plain `git status` prints `fsmonitor-ran`, which proves the fixture really is hostile. `filter.<name>.clean` is a documented, accepted risk (README) and is not tested.
+
 ---
 
 ## 7. CLI lifecycle (FX). Run in this order
@@ -427,7 +465,7 @@ Expected: stderr `Error: no logs — has \`kinet mcp start\` been run? (looked f
 
 ### TC-72 start on the default port. AC-7.1, AC-7.2
 Precondition: `port_free 7345`.
-Steps: `cd "$FX"; s=$(date +%s.%N 2>/dev/null || python3 -c 'import time;print(time.time())'); /usr/bin/time -p node "$K" mcp start; echo "exit=$?"`
+Steps: `cd "$FX"; /usr/bin/time -p node "$K" mcp start; echo "exit=$?"`
 Expected: `exit=0`, `real` < 5 s (dry run: 0.15 s). stdout:
 ```
 KINET MCP server started
@@ -444,8 +482,9 @@ cd "$FX"; ls -a .kinet/run; cat .kinet/run/.gitignore; stat -f '%Lp %N' .kinet/r
 git check-ignore -q .kinet/run/mcp.json && echo IGNORED; git status --porcelain | grep -c '\.kinet'
 node -e 'const s=require("/tmp/kinet-tsr/fx/.kinet/run/mcp.json");console.log(Object.keys(s).join(","), s.cwd, s.port, s.token.length)'
 PID=$(node -p 'require("/tmp/kinet-tsr/fx/.kinet/run/mcp.json").pid'); ps -o pid,ppid,pgid,tty,command -p $PID
+stat -f '%Lp %N' .kinet/run
 ```
-Expected: `.gitignore`, `mcp.json`, `mcp.log` are present and there is no `mcp.lock`. `.gitignore` contains `*`. Both files are mode `600`. `IGNORED`, count `0`. Keys `pid,port,token,cwd,startedAt,logPath,version`, cwd `/private/tmp/kinet-tsr/fx`, port `7345`, token length `64`. ps shows PPID `1`, PGID = PID, TTY `??`, command `node …/bin/kinet.js mcp --port 7345`. The token is not in argv.
+Expected: `.gitignore`, `mcp.json`, `mcp.log` are present and there is no `mcp.lock`. `.gitignore` contains `*`. Both files are mode `600`, and the last line is `700 .kinet/run`. `IGNORED`, count `0`. Keys `pid,port,token,cwd,startedAt,logPath,version`, cwd `/private/tmp/kinet-tsr/fx`, port `7345`, token length `64`. ps shows PPID `1`, PGID = PID, TTY `??`, command `node …/bin/kinet.js mcp --port 7345`. The token is not in argv.
 
 ### TC-74 Second start reuses the running server. AC-7.4
 Steps: `cd "$FX"; node "$K" mcp start; echo "exit=$?"; pgrep -f "kinet.js mcp --port 7345" | wc -l`
@@ -513,7 +552,7 @@ Expected: `not running`, `exit=0`.
 
 ### TC-84 The log survives stop and has the lifecycle lines. AC-10.5, AC-10.3
 Steps: `cd "$FX"; cat .kinet/run/mcp.log`
-Expected, in order: `INFO start mode=daemon port=7345 pid=<n> cwd=/private/tmp/kinet-tsr/fx version=1.0.1`, `INFO listening http://127.0.0.1:7345/sse`, `INFO session open id=<8 hex>`, `INFO tool name=kinet_git_status ms=<n> result=ok`, `INFO tool name=kinet_git_diff ms=<n> result=ok`, `INFO session close`, `WARN shutdown reason=http`. Every line starts with an ISO timestamp.
+Expected, in order: `INFO start mode=daemon port=7345 pid=<n> cwd=/private/tmp/kinet-tsr/fx version=1.0.1`, `INFO listening http://127.0.0.1:7345/sse`, `INFO session open id=<8 hex>`, `INFO tool name=kinet_git_status ms=<n> result=ok`, `INFO tool name=kinet_git_diff ms=<n> result=ok`, `INFO session close`, the `tsr-follow-marker` line appended by TC-79, `WARN shutdown reason=http`. Every line starts with a timestamp.
 
 ### TC-85 start rotates the log. AC-10.5
 ```bash
@@ -535,8 +574,38 @@ Expected: `port: 47312`, then `stopped …`, then `port: 47311` (the subcommand'
 ## 8. CLI negatives and robustness
 
 ### TC-90 Unknown subcommand. AC-6.6
-Steps: `cd "$FX"; /usr/bin/time -p node "$K" mcp foo; echo "exit=$?"; pgrep -fl "kinet.js mcp" ; echo "none=$?"; node "$K" mcp start extra; echo "exit2=$?"`
-Expected: stderr `Error: unknown subcommand 'foo'. Valid: start, stop, status, logs`, `exit=1`, `real` < 3 s, `none=1` (nothing started). For `start extra`: commander's excess-argument error and a non-zero exit, or, if commander accepts it, record the actual behaviour for review. It must not start two servers.
+```bash
+cd "$FX"; /usr/bin/time -p node "$K" mcp foo; echo "exit=$?"; node "$K" mcp foo bar; echo "exit2=$?"
+pgrep -fl "kinet.js mcp"; echo "none=$?"
+```
+Expected: stderr `error: unknown subcommand 'foo'. Valid: start, stop, status, logs` and `exit=1`, with `real` < 3 s. The same line again for `foo bar`, with `exit2=1`. Then `none=1` (nothing started).
+
+### TC-87 Stray arguments on any subcommand are refused (F-6 fix; design §5.1, §5.6)
+```bash
+cd "$FX"
+node "$K" mcp start 9000; echo "start exit=$?"
+node "$K" mcp stop x;     echo "stop exit=$?"
+node "$K" mcp status x;   echo "status exit=$?"
+node "$K" mcp logs x;     echo "logs exit=$?"
+pgrep -f "kinet.js mcp --port"; echo "no-daemon=$?"; test ! -e .kinet/run/mcp.json && echo NO-STATE
+node "$K" mcp stop; echo "cleanup exit=$?"
+```
+Expected, exactly:
+```
+error: too many arguments for 'start'. Expected 0 arguments but got 1.
+start exit=1
+error: too many arguments for 'stop'. Expected 0 arguments but got 1.
+stop exit=1
+error: too many arguments for 'status'. Expected 0 arguments but got 1.
+status exit=1
+error: too many arguments for 'logs'. Expected 0 arguments but got 1.
+logs exit=1
+no-daemon=1
+NO-STATE
+not running
+cleanup exit=0
+```
+The `error:` lines go to stderr. Dry run at `d5a94e3`: exactly this. Each command is on its own line because a bash loop over `"start 9000"` would pass a single argument.
 
 ### TC-91 Parent `--port` refused for stop/status/logs (design §5.1)
 Steps: `cd "$FX"; for s in status stop logs; do node "$K" mcp --port 1 $s; echo "$s exit=$?"; done`
@@ -557,11 +626,11 @@ Expected: stderr `Error: port 47313 is in use. Try: kinet mcp start --port <othe
 ### TC-94 Port busy (wildcard `*:P` holder, e.g. a dev server on its default host). AC-7.5
 ```bash
 cd "$FX"; node -e 'require("net").createServer(s=>s.end()).listen(+process.argv[1])' $P_WILD & H=$!; sleep 0.4
-node "$K" mcp start --port $P_WILD; echo "exit=$?"; lsof -nP -iTCP:$P_WILD -sTCP:LISTEN
+node "$K" mcp start --port $P_WILD; echo "exit=$?"; lsof -nP -iTCP:$P_WILD -sTCP:LISTEN | tail -n +2 | awk '{print $9}'
+ls -a .kinet/run | grep -E 'mcp\.(json|lock)$'; echo "no-state=$?"; pgrep -f "kinet.js mcp --port $P_WILD"; echo "no-orphan=$?"
 node "$K" mcp stop; kill $H
 ```
-Expected (per AC-7.5): `exit=1`, port in use, no state.
-**Dry run: FAILS.** It printed `KINET MCP server started`, `exit=0`, and lsof showed both `*:47314` (holder) and `127.0.0.1:47314` (kinet). macOS lets the more specific bind succeed, so kinet silently takes over 127.0.0.1 traffic for the other app. See §12, F-2.
+Expected: stderr `Error: port 47314 is in use. Try: kinet mcp start --port <other>`, `exit=1`. A single LISTEN row `*:47314` (the holder only). Then `no-state=1`, `no-orphan=1`, and the cleanup `stop` prints `not running`. F-2 is fixed (§13). Dry run at `d5a94e3`: exactly this.
 
 ### TC-95 Foreground `--port` on a busy port exits 3 (design §5.6)
 Steps: `cd "$FX"; node -e 'require("net").createServer().listen(+process.argv[1],"127.0.0.1")' $P_BUSY & H=$!; sleep 0.4; node "$K" mcp --port $P_BUSY; echo "exit=$?"; kill $H`
@@ -590,9 +659,26 @@ cd "$OTHER"; node "$K" mcp start --port $P_OTHER >/dev/null; OPID=$(node -p 'req
 cd "$FX"; cp "$OTHER/.kinet/run/mcp.json" .kinet/run/mcp.json
 node "$K" mcp status; echo "status-exit=$?"
 cp "$OTHER/.kinet/run/mcp.json" .kinet/run/mcp.json; node "$K" mcp stop; echo "stop-exit=$?"
-kill -0 $OPID && echo OTHER-ALIVE; (cd "$OTHER" && node "$K" mcp status | head -1)
+kill -0 $OPID && echo OTHER-ALIVE
+cp "$OTHER/.kinet/run/mcp.json" .kinet/run/mcp.json; node "$K" mcp start --port $P1 > /tmp/kinet-tsr/s.out; echo "start-exit=$?"; head -2 /tmp/kinet-tsr/s.out
+FPID=$(node -p 'require("/tmp/kinet-tsr/fx/.kinet/run/mcp.json").pid'); [ "$FPID" != "$OPID" ] && echo DIFFERENT-PID
+(cd "$OTHER" && node "$K" mcp status | head -1); node "$K" mcp stop
 ```
-Expected: `stopped (stale)` (the identity check sees the `cwd` mismatch), `status-exit=1`, `not running (cleared stale state)`, `stop-exit=0`, `OTHER-ALIVE`, `running`. Leave OTHER running for TC-102.
+Expected (AC-9.3: signal only after confirming it is **this project's** server; design §5.3: identity requires the state and `/health` `cwd` to equal this directory's realpath):
+```
+stopped (stale)
+status-exit=1
+not running (cleared stale state)
+stop-exit=0
+OTHER-ALIVE
+start-exit=0
+KINET MCP server started
+  pid:  <FX's own pid>
+DIFFERENT-PID
+running
+stopped (pid <FX's own pid>)
+```
+So `start` launches FX's own server (not `already running`), OTHER stays `running`, and OTHER is left running for TC-102. F-5 is fixed (§13). Dry run at `d5a94e3`: exactly this.
 
 ### TC-99 Start locks (design: review-2 finding 2). AC-7.5
 ```bash
@@ -620,25 +706,79 @@ pgrep -f "kinet.js mcp --port $P1" | wc -l; node "$K" mcp stop
 ```
 Expected: exactly one daemon (count `1`). One of the two prints `KINET MCP server started` with exit 0. The other prints `KINET MCP server already running` (exit 0) or `Error: another 'kinet mcp start' is running …` (exit 1, the designed lock behaviour). Then `stopped (pid …)`.
 
-### TC-101 A hung (unresponsive) daemon. AC-9.1, AC-8.3
+### TC-101 A hung (unresponsive) daemon. AC-9.1, AC-8.3 (design §5.2 step 2, §5.3 block U, §5.4, §5.6)
+`SIGSTOP` is a deterministic stand-in for a blocked event loop or a slow wake from sleep. The `unresponsive` state, block U, exit 2 and the forced stop are the accepted design change for F-1, recorded in 03-design §5.3/§5.4/§5.6.
 ```bash
 cd "$FX"; node "$K" mcp start --port $P_FRZ >/dev/null; PID=$(node -p 'require("/tmp/kinet-tsr/fx/.kinet/run/mcp.json").pid'); kill -STOP $PID
 node "$K" mcp status; echo "status-exit=$?"; test -e .kinet/run/mcp.json && echo STATE-KEPT || echo STATE-DELETED
-node "$K" mcp stop; echo "stop-exit=$?"; kill -0 $PID 2>/dev/null && echo STILL-ALIVE || echo GONE
-port_free $P_FRZ && echo PORT-FREE || echo PORT-HELD
+node "$K" mcp start --port $P_FRZ; echo "start-exit=$?"
+/usr/bin/time -p node "$K" mcp stop; echo "stop-exit=$?"; kill -0 $PID 2>/dev/null && echo STILL-ALIVE || echo GONE
+port_free $P_FRZ && echo PORT-FREE || echo PORT-HELD; test ! -e .kinet/run/mcp.json && echo STATE-CLEARED
+node "$K" mcp status; echo "status2-exit=$?"
 # cleanup, whatever the outcome
 kill -CONT $PID 2>/dev/null; kill $PID 2>/dev/null; sleep 1; pgrep -f "kinet.js mcp --port $P_FRZ"; echo "cleaned=$?"
 ```
-Expected (per AC-9.1, "stops … force-kills it if still alive after 5 s", and AC-8.3, which reserves stale for a server that is gone or a PID that belongs to someone else): `stop` ends the process (`GONE`, `PORT-FREE`), and `status` does not throw away the only handle to a live server.
-**Dry run: FAILS.** status gave `stopped (stale)` and deleted the state. stop gave `not running (cleared stale state)` with exit 0. The process was `STILL-ALIVE` and the port `PORT-HELD`. A later `start` on that port reports "port in use", and kinet has no handle left to stop it. This reproduces review-5 finding 1 with a deterministic trigger (`SIGSTOP`; real-world triggers are a blocked event loop or a slow wake from sleep). See §12, F-1. `cleaned=1` must hold after cleanup.
+Expected, exactly (pid and paths vary):
+```
+unresponsive
+  pid:    <PID>
+  port:   47316
+  log:    /private/tmp/kinet-tsr/fx/.kinet/run/mcp.log
+  hint:   the process is alive but /health did not answer; run `kinet mcp stop` to force-kill it
+status-exit=2
+STATE-KEPT
+Error: the MCP server for this project (pid <PID>) is not responding. Run: kinet mcp stop
+start-exit=1
+stopped (pid <PID>, force-killed after 5 s)
+real <5.0-8.0>
+stop-exit=0
+GONE
+PORT-FREE
+STATE-CLEARED
+stopped
+status2-exit=1
+cleaned=1
+```
+- The `Error:` line goes to stderr.
+- `real` must be between 5 and 8 s. Dry run: 7.15 s, which is the 1 s `/health` probe, plus the 1 s `/shutdown` timeout, plus the 5 s grace. Less than 5 s means it did not wait the grace period.
+- Dry run at `d5a94e3`: exactly this.
+
+### TC-106 A hung-looking decoy that is not ours is never signalled (review-6a #2). AC-9.3, AC-8.3 (design §5.3 "Confirming a hung pid is ours", §5.4 step 2)
+The decoy accepts TCP connections on the state's port but never answers HTTP, so `/health` times out exactly as for a hung daemon. Variant A has an old `startedAt`, so both the command-line check and the start-time check fail. Variant B uses a `startedAt` after the decoy started, so only the command-line check (`kinet.js mcp --port <port>`) can reject it.
+```bash
+cd "$FX"; mkdir -p .kinet/run
+node -e 'require("net").createServer(()=>{}).listen(+process.argv[1],"127.0.0.1")' $P_LOCK & D=$!; sleep 1.5
+w() { printf '{"pid":%s,"port":%s,"token":"%s","cwd":"%s","startedAt":"%s","logPath":"x","version":"1.0.1"}' $D $P_LOCK "$(openssl rand -hex 32)" "$PWD" "$1" > .kinet/run/mcp.json; }
+w 2026-10-25T00:00:00.000Z; node "$K" mcp status; echo "A status-exit=$?"; test ! -e .kinet/run/mcp.json && echo A-CLEARED
+w 2026-10-25T00:00:00.000Z; node "$K" mcp stop;   echo "A stop-exit=$?";   kill -0 $D && echo A-DECOY-ALIVE
+w "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"; node "$K" mcp status; echo "B status-exit=$?"
+w "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"; node "$K" mcp stop;   echo "B stop-exit=$?";   kill -0 $D && echo B-DECOY-ALIVE
+kill $D
+```
+Expected, exactly:
+```
+stopped (stale)
+A status-exit=1
+A-CLEARED
+not running (cleared stale state)
+A stop-exit=0
+A-DECOY-ALIVE
+stopped (stale)
+B status-exit=1
+not running (cleared stale state)
+B stop-exit=0
+B-DECOY-ALIVE
+```
+Neither `unresponsive` nor `force-killed` may appear. The decoy is alive after both stops. Dry run at `d5a94e3`: exactly this.
 
 ### TC-102 Two projects at once. AC-7.3
 ```bash
+(cd "$OTHER" && node "$K" mcp start --port $P_OTHER | head -1)   # self-contained: TC-98 may have left OTHER stopped
 cd "$FX"; node "$K" mcp start --port $P_OTHER; echo "same-port exit=$?"
 node "$K" mcp start --port $P1 | head -1; (cd "$OTHER" && node "$K" mcp status | head -1)
 node "$K" mcp stop; (cd "$OTHER" && node "$K" mcp status | head -1 && node "$K" mcp stop)
 ```
-Expected: `Error: port 47318 is in use …`, `same-port exit=1`. FX then starts on 47311, and OTHER still says `running`. Stopping FX leaves OTHER `running`. Then OTHER stops (`stopped (pid …)`).
+Expected: OTHER prints `KINET MCP server started` or `… already running`. Then `Error: port 47318 is in use …`, `same-port exit=1`. FX then starts on 47311, and OTHER still says `running`. Stopping FX leaves OTHER `running`. Then OTHER stops (`stopped (pid …)`).
 
 ### TC-103 Invalid `KINET_MCP_TOKEN` (design §2.6)
 Steps: `cd "$FX"; KINET_MCP_TOKEN=abc node "$K" mcp </dev/null; echo "exit=$?"; KINET_MCP_TOKEN=abc node "$K" mcp --port $P1; echo "exit=$?"`
@@ -648,6 +788,15 @@ Expected: both print `Error: KINET_MCP_TOKEN must be 64 hex characters` and exit
 Steps: `cd "$FX"; node "$K" mcp start --port $P1 >/dev/null; PID=$(node -p 'require("/tmp/kinet-tsr/fx/.kinet/run/mcp.json").pid'); kill -TERM $PID; sleep 1; tail -1 .kinet/run/mcp.log; node "$K" mcp status; echo "exit=$?"`
 Expected: the last log line is `WARN shutdown reason=SIGTERM`. `stopped (stale)`, `exit=1`.
 
+### TC-105 Symlinked `.kinet` or `.kinet/run` is refused (06-security finding 1). AC-7.3
+```bash
+rm -rf "$TSR/symfx" "$TSR/symtarget"; mkdir -p "$TSR/symfx" "$TSR/symtarget"; cd "$TSR/symfx"
+ln -s "$TSR/symtarget" .kinet; node "$K" mcp start --port $P1; echo "exit=$?"; ls -A "$TSR/symtarget" | wc -l
+rm .kinet; mkdir .kinet; ln -s "$TSR/symtarget" .kinet/run; node "$K" mcp start --port $P1; echo "exit=$?"; ls -A "$TSR/symtarget" | wc -l
+pgrep -f "kinet.js mcp --port $P1"; echo "no-daemon=$?"
+```
+Expected: `Error: refusing to use /private/tmp/kinet-tsr/symfx/.kinet: it is a symlink. Remove it and try again.`, `exit=1`, `0`. Then the same for `…/.kinet/run`, `exit=1`, `0`. Finally `no-daemon=1`. Nothing is written through the link.
+
 ---
 
 ## 9. HTTP routes and guard
@@ -656,13 +805,13 @@ Precondition: `cd "$FX"; node "$K" mcp start --port $P1 >/dev/null; TOKEN=$(node
 
 ### TC-110 Host guard (DNS-rebinding defence). Security open question §8 / design D8
 ```bash
-for h in "evil.example:$P1" "127.0.0.1" "localhost:$P1" "127.0.0.1:$P1"; do printf '%-22s ' "$h"; curl -s -m 1 -o /dev/null -w '%{http_code}\n' -H "Host: $h" "http://127.0.0.1:$P1/sse"; done
+for h in "evil.example:$P1" "127.0.0.1" "localhost:$P1" "127.0.0.1:$P1"; do printf '%-22s ' "$h"; curl -s -m 1 -o /dev/null -w '%{http_code}\n' -H 'Accept: text/event-stream' -H "Host: $h" "http://127.0.0.1:$P1/sse"; done
 ```
 Expected: `evil.example:47311 403`, `127.0.0.1 403` (no port), `localhost:47311 200`, `127.0.0.1:47311 200` (curl prints 200 when its 1 s timeout ends the stream). A 403 body reads `Forbidden host`.
 
 ### TC-111 Origin guard
 ```bash
-for o in "http://evil.example" "http://localhost:$P1" "http://127.0.0.1:$P1" "null"; do printf '%-26s ' "$o"; curl -s -m 1 -o /dev/null -w '%{http_code}\n' -H "Origin: $o" "http://127.0.0.1:$P1/sse"; done
+for o in "http://evil.example" "http://localhost:$P1" "http://127.0.0.1:$P1" "null"; do printf '%-26s ' "$o"; curl -s -m 1 -o /dev/null -w '%{http_code}\n' -H 'Accept: text/event-stream' -H "Origin: $o" "http://127.0.0.1:$P1/sse"; done
 ```
 Expected: `http://evil.example 403`, `http://localhost:47311 200`, `http://127.0.0.1:47311 200`, `null 403`.
 
@@ -696,11 +845,20 @@ Expected: LISTEN `127.0.0.1:47315`. `health 404`, `shutdown 404` (no daemon toke
 ### TC-114 Session cap (design §6, 16 sessions)
 ```bash
 cd "$FX"; node "$K" mcp start --port $P1 >/dev/null
-for i in $(seq 1 16); do curl -sN "http://127.0.0.1:$P1/sse" >/dev/null & done; sleep 1
-curl -s -m 1 -o /dev/null -w '17th %{http_code}\n' "http://127.0.0.1:$P1/sse"
+for i in $(seq 1 16); do curl -sN -H 'Accept: text/event-stream' "http://127.0.0.1:$P1/sse" >/dev/null & done; sleep 1
+curl -s -m 1 -o /dev/null -w '17th %{http_code}\n' -H 'Accept: text/event-stream' "http://127.0.0.1:$P1/sse"
 kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; node "$K" mcp stop
 ```
 Expected: `17th 503`. Then `stopped (pid …)`.
+
+### TC-115 `/sse` needs an event-stream Accept header, and cross-site fetches are refused (06-security finding 4)
+```bash
+cd "$FX"; node "$K" mcp start --port $P1 >/dev/null
+curl -s -m 1 -o /tmp/kinet-tsr/body -w 'no-accept %{http_code} ' "http://127.0.0.1:$P1/sse"; cat /tmp/kinet-tsr/body; echo
+for s in cross-site same-site same-origin none; do curl -s -m 1 -o /dev/null -w "sec-fetch-site=$s %{http_code}\n" -H 'Accept: text/event-stream' -H "Sec-Fetch-Site: $s" "http://127.0.0.1:$P1/sse"; done
+node "$K" mcp stop
+```
+Expected: `no-accept 406 Accept must include text/event-stream`. Then `cross-site 403`, `same-site 403`, `same-origin 200`, `none 200`. Then `stopped (pid …)`.
 
 ---
 
@@ -725,8 +883,8 @@ Steps: `cd "$KFX"; MCP_WAIT=15 mcp_rpc "$(call 2 kinet_web_search '{"query":"nod
 Expected: each id returns either results or a readable `Error: …` / rate-limit message, and stdout is still valid JSON-RPC. No crash. **BLOCKED (network)** if offline. These tools did not change (`git diff develop...HEAD -- src/mcp/tools/web-search.js src/mcp/tools/github-search.js` is empty).
 
 ### TC-122 memory_save → memory_recall round trip (writes only into KFX)
-Steps: `cd "$KFX"; mcp_rpc "$(call 2 kinet_memory_save '{"title":"tsr probe","body":"tsr-roundtrip-token","id":"tsr-probe"}')"; mcp_rpc "$(call 3 kinet_memory_recall '{"query":"tsr-roundtrip-token"}')"`
-Expected: `Memory saved: tsr-probe`, then id=3 includes `tsr probe`.
+Steps: `cd "$KFX"; mcp_rpc "$(call 2 kinet_memory_save '{"title":"tsr probe","body":"tsr-roundtrip-token","id":"tsr-probe"}')"; mcp_rpc "$(call 3 kinet_memory_recall '{"query":"tsr probe"}')"`
+Expected: `Memory saved: tsr-probe`, then id=3 returns the entry with `"title": "tsr probe"` and body `tsr-roundtrip-token`. Recall matches on the **title** (and tags) only. That is unchanged existing behaviour: a body-text query returns `[]`.
 
 ### TC-123 `kinet init` still writes `args: ['mcp']`, and other commands work. AC-6.4
 ```bash
@@ -738,7 +896,21 @@ Expected: `init-exit=0`, `{"command":"kinet","args":["mcp"],"env":{}}`, `status-
 
 ### TC-124 `kinet status` and `kinet validate` on the repo
 Steps: `cd /Users/sjain/dev/personal/kinet && node bin/kinet.js status; echo "exit=$?"; node bin/kinet.js validate >/dev/null; echo "exit=$?"`
-Expected: both `exit=0`. status prints installation health with no MCP state mixed in (01 §9).
+Expected: both `exit=0`. status prints installation health with no MCP state mixed in (01 §9). `validate` exits 1 whenever violations exist, so this depends on TC-3 (`violations=0`; F-4 is fixed).
+
+### TC-125 `kinet update`, `kinet refresh` and `--version` still work (review-6a #5)
+The branch touches `src/cli/update.js`, `src/cli/init.js`, `src/context/distiller.js`, `src/rules/engine.js`, `src/prp/system.js` and `src/rules/validators/common.js`, and adds `enablePositionalOptions()` to the root program. Run after TC-123, in the same `initfx` project.
+```bash
+source /tmp/kinet-tsr/env.sh; cd "$TSR/initfx"
+g0=$(grep -m1 'Generated:' CLAUDE.md); sleep 1.1
+node "$K" update > /tmp/kinet-tsr/upd.out 2>&1; echo "update-exit=$?"; g1=$(grep -m1 'Generated:' CLAUDE.md); [ "$g0" != "$g1" ] && echo REGENERATED
+node "$K" update --rules >/dev/null 2>&1; echo "update-rules-exit=$?"
+node "$K" update --context >/dev/null 2>&1; echo "update-context-exit=$?"
+node "$K" update --memory >/dev/null 2>&1; echo "update-memory-exit=$?"
+node "$K" refresh > /tmp/kinet-tsr/ref.out 2>&1; echo "refresh-exit=$?"; grep -c 'Symlinks refreshed' /tmp/kinet-tsr/ref.out
+node "$K" --version
+```
+Expected: `update-exit=0`, `REGENERATED` (the `> Generated: <ISO>` line in CLAUDE.md has a new timestamp), `update-rules-exit=0`, `update-context-exit=0`, `update-memory-exit=0`, `refresh-exit=0`, `1`, `1.0.1`. `refresh` only works inside the project (it removes stale symlinks under `.kinet/rules` and `.claude/commands`) and needs no network. Dry run at `d5a94e3`: exactly this.
 
 ---
 
@@ -790,12 +962,12 @@ A = covered by the repo suite inside TC-1 (test name in brackets). S = scripted 
 | 0.2 | TC-20, TC-36 (S); A [lists staged… without a .kinet dir] |
 | 0.3 | TC-25, TC-49 (S); A [returns a plain message outside a git repo; plain messages without a usable package.json] |
 | 0.4 | TC-33, TC-42 (S); A [capText…; safeExec caps long output] |
-| 0.5 | TC-58, TC-59 (S); A [safeExec passes arguments literally; unknown and injected refs…] |
+| 0.5 | TC-58, TC-59, TC-63 (S); A [safeExec passes arguments literally; unknown and injected refs…] |
 | 0.6 | TC-5 (S); A [no new production dependency] |
 | 0.7 | TC-M5 (M); A [README MCP Tools table lists every tool] |
 | 0.8a | TC-55, TC-56 (S); A [refuses bad arguments; assertNoLeadingDash] |
 | 0.8b | TC-29 (S, behaviour); A [paths come after the -- separator; the scan path comes after the --] |
-| 0.8c | TC-57 (S); A [resolveInsideProject keeps paths inside; path is confined to the project] |
+| 0.8c | TC-57, TC-62 (S); A [resolveInsideProject keeps paths inside; path is confined to the project] |
 | 0.9 | TC-6, TC-44 (S); A [new code uses no synchronous blocking calls] |
 | 1.1 | TC-20, TC-23 (S); A [lists staged…; reports upstream ahead/behind] |
 | 1.2 | TC-20, TC-21 (S); A [clamps the commit count to 1..50] |
@@ -826,20 +998,20 @@ A = covered by the repo suite inside TC-1 (test name in brackets). S = scripted 
 | 6.3 | TC-12, TC-13 (S); A [bare `kinet mcp`… only protocol on stdout] |
 | 6.4 | TC-123 (S); A [`kinet init` still configures clients with args ['mcp']] |
 | 6.5 | TC-11 (S); A [`kinet mcp --help` lists the subcommands] |
-| 6.6 | TC-90 (S); A [an unknown subcommand exits non-zero…] |
+| 6.6 | TC-90, TC-87 (S); A [an unknown subcommand exits non-zero…] |
 | 7.1 | TC-72, TC-73 (S), TC-M2 (M); A [start runs a background server…] |
 | 7.2 | TC-72, TC-86 (S); A [start runs…; the parent --port is forwarded to start] |
-| 7.3 | TC-73, TC-77, TC-102 (S); A [start runs…] |
-| 7.4 | TC-74 (S); A [… a second start reuses it] |
+| 7.3 | TC-73, TC-77, TC-98, TC-102, TC-105 (S); A [start runs…] |
+| 7.4 | TC-74, TC-98 (S); A [… a second start reuses it] |
 | 7.5 | TC-93, TC-94, TC-99, TC-M1/M1a; A [a busy port fails cleanly and leaves no run state; abortStart…; lock tests] |
 | 7.6 | TC-76 (S); A [binds to 127.0.0.1 only] |
 | 8.1 | TC-75 (S); A [start runs…, status reports it] |
 | 8.2 | TC-70, TC-82 (S); A [status with no state says stopped and creates nothing] |
-| 8.3 | TC-96, TC-97, TC-98, TC-101, TC-104 (S); A [status clears state that points at an unrelated live process; a corrupt state file reads as stopped; checkIdentity…] |
+| 8.3 | TC-96, TC-97, TC-98, TC-101, TC-104, TC-106 (S); A [status clears state that points at an unrelated live process; a corrupt state file reads as stopped; checkIdentity…] |
 | 8.4 | TC-70, TC-80 (S); A [status with no state… creates nothing; checkIdentity… nothing is deleted] |
 | 9.1 | TC-82, TC-101 (S); A [stop shuts the server down gracefully…; stop force-kills a server that ignores /shutdown] |
 | 9.2 | TC-83, TC-96 (S); A [stop never signals an unrelated process…] |
-| 9.3 | TC-96, TC-98 (S); A [stop never signals an unrelated process that reuses the pid] |
+| 9.3 | TC-96, TC-98, TC-106 (S); A [stop never signals an unrelated process that reuses the pid] |
 | 10.1 | TC-78 (S); A [logs record start, tool calls and shutdown…] |
 | 10.2 | TC-79 (S), TC-M3 (M); A [logs -f streams new lines until Ctrl-C] |
 | 10.3 | TC-77, TC-81, TC-84, TC-104 (S); A [logs record start, tool calls and shutdown without argument values; every tool call is logged by name and outcome] |
@@ -848,8 +1020,8 @@ A = covered by the repo suite inside TC-1 (test name in brackets). S = scripted 
 | 11.1 | TC-1, TC-7 (S) |
 | 11.2 | TC-2, TC-3 (S) |
 | 11.3 | TC-M5 (M); A [README documents the lifecycle commands and localhost binding] |
-| 01 §8 / D8 (Host/Origin) | TC-110, TC-111 (S); A [guard refuses foreign Host and Origin headers] |
-| Design extras (not ACs) | TC-4, TC-43, TC-60, TC-61, TC-91, TC-92, TC-95, TC-100, TC-103, TC-112, TC-114, TC-120-124 |
+| 01 §8 / D8 (Host/Origin), 06-security finding 4 | TC-110, TC-111, TC-115 (S); A [guard refuses foreign Host and Origin headers] |
+| Design extras (not ACs) | TC-4, TC-43, TC-60, TC-61, TC-64, TC-87 (F-6), TC-91, TC-92, TC-95, TC-100, TC-103, TC-112, TC-114, TC-120-125 |
 
 Every AC from 0.1 to 11.3 has at least one scripted or manual case and, except 11.1/11.2 (gates by nature), at least one automated test.
 
@@ -857,35 +1029,44 @@ Every AC from 0.1 to 11.3 has at least one scripted or manual case and, except 1
 
 ## 13. Dry-run results (2026-10-25, Node 24.15.0, macOS)
 
-Dry-run so far: TC-1, 2, 3, 4, 10, 11, 12, 41, 45, 49, 55-59 (equivalents), 72-77, 79, 82-83, 90-99 (equivalents), 101, 110-113 (partial), 120, 123, M1a. All servers and worktrees were cleaned up. The repo working tree is unchanged.
+**Revision 2, at `d5a94e3`.** Re-run exactly as written: TC-S1, TC-S3, TC-1 (117/117), TC-2, TC-3 (0 violations, 33 warnings), TC-35, 36, 45, 64, 73, 87, 90, 94, 98, 101, 102, 106 (both variants), 123, 125 (all steps).
+**Revision 1, at `f4144d8`.** These were run and are unaffected by the fixes: TC-4-14, 20-34, 37-44, 46, 47, 49, 55-63, 70-72, 74-86, 91-93, 95-97, 99, 100, 103-105, 110-115, 120, 122, M1a.
+Not dry-run: TC-48, 121 (network), TC-124 (trivial), TC-M1-M5 (manual).
+All servers, worktrees and fixtures were cleaned up after each round. The repo working tree has no changes apart from this file.
 
-Findings for `/test-and-ship` to decide (one per bug):
+Findings from revision 1, and their status at `d5a94e3`:
 
-**F-1. Medium. A hung daemon is orphaned by `status`/`stop` (TC-101).** AC-9.1, AC-8.3.
-- Repro: `kinet mcp start --port 47316`, then `kill -STOP <pid>`, then `kinet mcp status` (or `stop`).
-- Expected: stop force-kills it after 5 s, and status does not delete the state of a live server.
-- Actual: `stopped (stale)` / `not running (cleared stale state)`, exit 0. `mcp.json` is deleted, and the process stays alive holding the port. After that, `start` says "port in use" and `stop` says "not running", so only a manual `kill` recovers it.
-- Root cause: `checkIdentity` treats "pid alive + /health timeout" as stale (`src/mcp/runstate.js:146-147`, used at `src/cli/mcp.js:188-189` and `:223-225`). This is the same issue as review-5 finding 1, which was marked non-blocking there. This plan holds it to AC-9.1 as written.
+**F-1. Medium. Fixed. A hung daemon was orphaned by `status`/`stop` (TC-101).** AC-9.1, AC-8.3.
+- Before: `status` gave `stopped (stale)` and deleted `mcp.json` while the frozen process kept the port.
+- Fix: `status` now reports `unresponsive` (exit 2) and keeps the state. `start` refuses with exit 1. `stop` force-kills the server after 5 s.
+- Design: 03-design §5.2/§5.3/§5.4/§5.6. TC-106 shows the fix still never signals an unrelated process (review-6a #2).
 
-**F-2. Low. `start` succeeds when the port is held on the wildcard address (TC-94).** AC-7.5.
-- Repro: `node -e 'require("net").createServer().listen(47314)' &`, then `kinet mcp start --port 47314`.
-- Expected: exit 1, "port 47314 is in use".
-- Actual: `KINET MCP server started`, exit 0. lsof shows both `*:47314` and `127.0.0.1:47314`, so kinet silently takes over 127.0.0.1 traffic meant for the other app.
-- This is macOS bind semantics. Linux would fail with `EADDRINUSE`.
+**F-2. Low. Fixed. `start` succeeded when the port was held on the wildcard address (TC-94).** AC-7.5.
+- Before: macOS let kinet bind `127.0.0.1:P` next to the holder's `*:P`.
+- Now: `Error: port P is in use. Try: kinet mcp start --port <other>`, exit 1.
 
-**F-3. Low. `kinet validate` warning budget exceeded (TC-3).** Design §0.5 / §9 row 11.2 allows ≤ baseline + 1.
-- The AC part passes: `violations=0`.
-- Actual: 32 warnings vs 29 on develop. The 3 extra `no-todo-without-ticket` hits come from the validator's case-insensitive regex matching the identifier `find-todos` / `kinet_find_todos`:
-  - `src/mcp/tools/local.js:5` (`import * as findMarkers from './find-todos.js'`)
-  - `src/mcp/tools/find-todos.js:15` (`name: 'kinet_find_todos'`)
-  - `src/mcp/tools/find-todos.test.js:4`
-- These are false positives of an existing rule, not real TODOs. Either accept them and amend the budget, or treat them as a validator follow-up.
+**F-3. Low. Accepted deviation. `kinet validate` has 33 warnings vs design budget 30 (TC-3).**
+- The extra warnings are false positives: the validator's case-insensitive `TODO` regex matches the name `find-todos`/`kinet_find_todos` in `src/mcp/tools/local.js`, `find-todos.js`, `find-todos.test.js` and `git-hostile-config.test.js`.
+- TC-3 now expects exactly 33, and fails above that.
+
+**F-4. Medium. Fixed. `kinet validate` reported 2 `no-hardcoded-secrets` violations (TC-3).** AC-11.2.
+- Cause: `src/mcp/runstate.test.js` (`token: 'secret-token'`, from `1bfc922`).
+- Now: `violations=0`.
+
+**F-5. Medium. Fixed. A copied project's state file let `stop` kill the original project's server (TC-98).** AC-9.3, AC-7.3.
+- Real-world trigger: `cp -R` of a project while its server runs.
+- Fix: identity now requires the state and `/health` `cwd` to equal this directory's realpath (03-design §5.3). TC-98 checks `status`, `stop`, and that `start` launches the copy's own server.
+
+**F-6. Low. Fixed. Subcommands silently ignored stray arguments (TC-87).**
+- Before: `kinet mcp start 9000` started on 7345.
+- Now: `error: too many arguments for '<sub>'. Expected 0 arguments but got 1.`, exit 1, for all four subcommands (03-design §5.1).
 
 Not defects (accepted deviations, recorded so nobody re-raises them):
 1. The URL prints `http://127.0.0.1:<port>/sse` rather than the AC's `localhost` (design §5.2).
 2. `npm test` is the bare `node --test`, not a quoted glob (design §0.3).
 3. During concurrent starts, the loser may exit 1 with the lock message instead of "already running" (design §5.2 step 1).
 4. Review-5 finding 2 (`logs -f` can skip the head of a rotated log within one 250 ms poll) is cosmetic and is not tested here.
+5. F-3 (warning count 33), above.
 
 ## 14. Cleanup (run at the end, whatever the outcome)
 
