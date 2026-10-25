@@ -51,7 +51,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/mcp/tools/git-status.test.js src/mcp/server.test.js`
   - Commit: `feat(mcp): add kinet_git_status tool`
 
-- [ ] **S5 — T2 `kinet_git_diff`**
+- [x] **S5 — T2 `kinet_git_diff`**
   - Files: `src/mcp/tools/git-diff.js` + test (including `buildDiffArgs`); `local.js`.
   - ACs: 2.1-2.5, 0.3, 0.5 (`HEAD; touch pwned`), 0.8a/b/c.
   - Verify by: `node --test src/mcp/tools/git-diff.test.js`
