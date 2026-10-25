@@ -302,7 +302,7 @@ test('an unrelated process holding the port silently is never reported unrespons
   const cwd = await project();
   const port = await freePort();
   // Accepts connections but never answers HTTP, so /health times out.
-  const decoy = spawn(process.execPath, ['-e', 'require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.log("ready"))', String(port)], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const decoy = spawn(process.execPath, ['--input-type=module', '-e', 'import net from "node:net"; net.createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.log("ready"))', String(port)], { stdio: ['ignore', 'pipe', 'ignore'] });
   try {
     let ready = '';
     decoy.stdout.setEncoding('utf8').on('data', (d) => { ready += d; });
