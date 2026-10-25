@@ -31,7 +31,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/utils/exec.test.js`
   - Commit: `feat(utils): add safeExec with no-shell spawn, output cap and group kill`
 
-- [ ] **S2 — Argument validation**
+- [x] **S2 — Argument validation**
   - Files: `src/utils/args.js`, `src/utils/args.test.js`.
   - **[R3-2]:** the containment check is `rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)`. When the path does not exist, return the lexical relative path from step 2. Add tests showing that `'..config'` is accepted and that a deleted or non-existent file returns its lexical relative path. Keep the existing refusals for `../..`, `/etc`, a symlink to `/etc` and `-x`.
   - ACs: 0.8a, 0.8c; `parsePort` and `parsePositiveInt` for 6.6.
