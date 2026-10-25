@@ -25,7 +25,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `npm run lint && npm test` (expect `tests N`, N > 0), then `node bin/kinet.js validate` (same lines flagged as before), then `grep -n 'TBC-1\|src/\*\*/\*.test.js' docs/delivery/2026-10-25-mcp-cli-and-tools/03-design.md` (no matches).
   - Commit: `chore: add eslint flat config, fix test script, share ticket pattern`
 
-- [ ] **S1 — safeExec**
+- [x] **S1 — safeExec**
   - Files: `src/utils/exec.js`, `src/utils/exec.test.js`.
   - ACs: 0.4, 0.5, 0.9 (exec part), and review-2 finding 4 (token stripped from the child env; process-group kill).
   - Verify by: `node --test src/utils/exec.test.js`
