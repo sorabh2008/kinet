@@ -3,5 +3,6 @@
 import * as gitStatus from './git-status.js';
 import * as gitDiff from './git-diff.js';
 import * as findMarkers from './find-todos.js';
+import * as runScript from './run-script.js';
 
-export const localTools = [gitStatus, gitDiff, findMarkers];
+export const localTools = [gitStatus, gitDiff, findMarkers, runScript];

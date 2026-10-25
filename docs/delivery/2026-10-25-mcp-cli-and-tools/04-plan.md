@@ -63,7 +63,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/mcp/tools/find-todos.test.js src/rules/patterns.test.js`
   - Commit: `feat(mcp): add kinet_find_todos tool`
 
-- [ ] **S7 — T4 `kinet_run_script`**
+- [x] **S7 — T4 `kinet_run_script`**
   - Files: `src/mcp/tools/run-script.js` + test; `local.js`.
   - ACs: 4.1-4.6, 0.3.
   - Verify by: `node --test src/mcp/tools/run-script.test.js`
