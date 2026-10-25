@@ -75,7 +75,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `npm test` and the S3 stdio pipe command (now lists 14 tools).
   - Commit: `feat(mcp): add kinet_check_deps tool`
 
-- [ ] **S9 — Fix the HTTP/SSE server**
+- [x] **S9 — Fix the HTTP/SSE server**
   - Files: `src/mcp/http.js` + `http.test.js` (Host/Origin guard, session map, top-level try/catch, `/health` and `/shutdown` only when a token is set); `server.js` (127.0.0.1 bind, exit 3 on `EADDRINUSE`, `shutdown()`, SIGTERM/SIGINT handlers); the `--port` part of `mcp-routing.test.js`.
   - ACs: 6.2, 7.6 (in-process part), D8, D9, review-2 finding 3.
   - Verify by: `node --test src/mcp/http.test.js src/cli/mcp-routing.test.js`, then manually run `node bin/kinet.js mcp --port 7399` and, in another shell, `curl -si -H 'Host: evil.example' http://127.0.0.1:7399/sse` (expect 403).

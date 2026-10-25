@@ -1,11 +1,11 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { join } from 'path';
+import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'fs';
 import { readFile, realpath } from 'node:fs/promises';
 import { loadConfig } from '../utils/config.js';
@@ -19,6 +19,7 @@ import { webSearch } from './tools/web-search.js';
 import { githubSearch } from './tools/github-search.js';
 import { localTools } from './tools/local.js';
 import { createLogger } from './log.js';
+import { createRequestHandler, listenLocal } from './http.js';
 
 const localByName = new Map(localTools.map((tool) => [tool.definition.name, tool.run]));
 
@@ -76,6 +77,42 @@ async function readVersion() {
   return JSON.parse(await readFile(pkgPath, 'utf8')).version;
 }
 
+async function startHttp({ port, token, log, version, cwd }) {
+  const startedAt = new Date().toISOString();
+  const { handler, closeAllSessions } = createRequestHandler({
+    port,
+    token,
+    log,
+    createSessionServer: () => createKinetServer({ log }),
+    healthInfo: () => ({ pid: process.pid, cwd, startedAt, version }),
+    requestShutdown: (reason) => shutdown(reason),
+  });
+  const httpServer = createServer(handler);
+
+  let shuttingDown = false;
+  async function shutdown(reason) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log.warn(`shutdown reason=${reason}`);
+    killActiveProcessGroups('SIGTERM');
+    // Fallback in case a connection refuses to close.
+    setTimeout(() => process.exit(0), 1000).unref();
+    await closeAllSessions();
+    httpServer.close(() => process.exit(0));
+    httpServer.closeAllConnections();
+  }
+
+  try {
+    await listenLocal(httpServer, port);
+  } catch (err) {
+    if (err.code !== 'EADDRINUSE') throw err;
+    log.error(`port ${port} is in use`);
+    process.exit(3);
+  }
+  log.info(`listening http://127.0.0.1:${port}/sse`);
+  return shutdown;
+}
+
 export async function startMcpServer({ port } = {}) {
   const { token, error } = takeDaemonToken();
   if (error) {
@@ -93,40 +130,23 @@ export async function startMcpServer({ port } = {}) {
   // Also covers stdio mode when the client goes away mid-script.
   process.on('exit', () => killActiveProcessGroups('SIGKILL'));
 
-  let shuttingDown = false;
-  async function shutdown(reason) {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    log.warn(`shutdown reason=${reason}`);
-    killActiveProcessGroups('SIGTERM');
-    process.exit(0);
-  }
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.once('SIGINT', () => shutdown('SIGINT'));
-
   if (port) {
-    // HTTP/SSE transport for remote use
-    const server = createKinetServer({ log });
-    const { createServer } = await import('http');
-    let transport;
-    const httpServer = createServer(async (req, res) => {
-      if (req.url === '/sse') {
-        transport = new SSEServerTransport('/messages', res);
-        await server.connect(transport);
-      } else if (req.url === '/messages' && req.method === 'POST') {
-        await transport?.handlePostMessage(req, res);
-      } else {
-        res.writeHead(404).end();
-      }
-    });
-    httpServer.listen(port, () => {
-      log.info(`listening on port ${port}`);
-    });
-  } else {
-    // Stdio transport (default — Claude Code uses this)
-    const transport = new StdioServerTransport();
-    await createKinetServer({ log }).connect(transport);
+    const shutdown = await startHttp({ port, token, log, version, cwd });
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
+    return;
   }
+
+  process.once('SIGTERM', () => stdioShutdown(log, 'SIGTERM'));
+  process.once('SIGINT', () => stdioShutdown(log, 'SIGINT'));
+  // Stdio transport (default — Claude Code uses this)
+  await createKinetServer({ log }).connect(new StdioServerTransport());
+}
+
+function stdioShutdown(log, reason) {
+  log.warn(`shutdown reason=${reason}`);
+  killActiveProcessGroups('SIGTERM');
+  process.exit(0);
 }
 
 async function dispatch(tool, args, ctx) {
