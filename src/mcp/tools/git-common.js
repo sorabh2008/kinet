@@ -1,9 +1,16 @@
 import { safeExec } from '../../utils/exec.js';
 
+// Every git call goes through here. A project unpacked from an archive can ship
+// its own .git/config, and core.fsmonitor names a command git would run for us
+// (review-6b finding 1), so it is always switched off.
+export function runGit(args, options) {
+  return safeExec('git', ['-c', 'core.fsmonitor=false', ...args], options);
+}
+
 // Shared by the git-backed tools so they all report "not a repo" and git
 // failures the same way.
 export async function isGitWorkTree(cwd) {
-  const result = await safeExec('git', ['rev-parse', '--is-inside-work-tree'], { cwd, timeoutMs: 10000 });
+  const result = await runGit(['rev-parse', '--is-inside-work-tree'], { cwd, timeoutMs: 10000 });
   return result.code === 0 && result.stdout.trim() === 'true';
 }
 

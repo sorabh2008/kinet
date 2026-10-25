@@ -1,10 +1,9 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { glob } from 'glob';
-import { safeExec } from '../../utils/exec.js';
 import { resolveInsideProject } from '../../utils/args.js';
 import { TICKET_MARKERS, markersIn, hasTicketRef } from '../../rules/patterns.js';
-import { isGitWorkTree, gitFailure } from './git-common.js';
+import { isGitWorkTree, gitFailure, runGit } from './git-common.js';
 
 const MAX_FILE_BYTES = 1024 * 1024;
 const BINARY_SNIFF_BYTES = 8192;
@@ -50,7 +49,7 @@ export function parseGrepOutput(stdout) {
 }
 
 async function scanWithGit(cwd, rel) {
-  const result = await safeExec('git', buildGrepArgs(rel), { cwd, maxChars: 2_000_000, timeoutMs: 30000 });
+  const result = await runGit(buildGrepArgs(rel), { cwd, maxChars: 2_000_000, timeoutMs: 30000 });
   if (result.code === 1) return [];
   if (result.code !== 0) throw new Error(gitFailure('grep', result));
   return parseGrepOutput(result.stdout);

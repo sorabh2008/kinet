@@ -1,6 +1,5 @@
-import { safeExec } from '../../utils/exec.js';
 import { assertNoLeadingDash, resolveInsideProject } from '../../utils/args.js';
-import { isGitWorkTree, notARepoMessage, gitFailure } from './git-common.js';
+import { isGitWorkTree, notARepoMessage, gitFailure, runGit } from './git-common.js';
 
 const NAME = 'kinet_git_diff';
 const SCOPES = ['working', 'staged', 'ref'];
@@ -32,10 +31,11 @@ function scopeLabel(scope, ref) {
 
 // Paths always follow `--`, so git can never read them as options (AC-0.8b), and
 // --literal-pathspecs stops magic such as `:(top)` or `:/x` reaching outside the
-// project directory (06-security finding 3).
+// project directory (06-security finding 3). --no-textconv stops a committed
+// .gitattributes driver running a command from a hostile .git/config (review-6b finding 1).
 export function buildDiffArgs({ scope = 'working', ref, path } = {}, { stat = false } = {}) {
   return [
-    '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff',
+    '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv',
     ...scopeArgs(scope, ref),
     ...(stat ? ['--stat'] : []),
     '--',
@@ -58,18 +58,18 @@ export async function run(args = {}, ctx) {
   if (!(await isGitWorkTree(cwd))) return notARepoMessage(cwd, NAME);
 
   if (scope === 'ref') {
-    const verify = await safeExec('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd, timeoutMs: 10000 });
+    const verify = await runGit(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd, timeoutMs: 10000 });
     if (verify.code !== 0) return `Unknown ref "${ref}": not a commit in this repository.`;
   }
 
-  const stat = await safeExec('git', buildDiffArgs({ scope, ref, path }, { stat: true }), { cwd, timeoutMs: 30000, maxChars: 4000 });
+  const stat = await runGit(buildDiffArgs({ scope, ref, path }, { stat: true }), { cwd, timeoutMs: 30000, maxChars: 4000 });
   if (stat.code !== 0) return gitFailure('diff', stat);
   if (!stat.stdout.trim()) {
     const untrackedNote = scope === 'working' ? ' Untracked files are not shown; see kinet_git_status.' : '';
     return `No changes (${scopeLabel(scope, ref)}).${untrackedNote}`;
   }
 
-  const patch = await safeExec('git', buildDiffArgs({ scope, ref, path }), { cwd, timeoutMs: 30000, maxChars: 18000, keep: 'head' });
+  const patch = await runGit(buildDiffArgs({ scope, ref, path }), { cwd, timeoutMs: 30000, maxChars: 18000, keep: 'head' });
   if (patch.code !== 0) return gitFailure('diff', patch);
   return `diff: ${scopeLabel(scope, ref)}\n\n${stat.stdout.trimEnd()}\n\n${patch.stdout}`;
 }

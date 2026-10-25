@@ -1,5 +1,4 @@
-import { safeExec } from '../../utils/exec.js';
-import { isGitWorkTree, notARepoMessage, gitFailure, clampInt } from './git-common.js';
+import { isGitWorkTree, notARepoMessage, gitFailure, clampInt, runGit } from './git-common.js';
 
 const NAME = 'kinet_git_status';
 const FIELD_SEP = '\x1f';
@@ -76,8 +75,8 @@ export async function run(args = {}, ctx) {
   const commits = clampInt(args.commits, { min: 1, max: 50, fallback: 10 });
   // --no-optional-locks: a read-only tool must never take .git/index.lock while the user runs git.
   const [statusResult, logResult] = await Promise.all([
-    safeExec('git', ['--no-optional-locks', 'status', '--porcelain=v2', '--branch'], { cwd, timeoutMs: 10000 }),
-    safeExec('git', ['--no-optional-locks', 'log', `-n${commits}`, '--format=%h%x1f%an%x1f%aI%x1f%s'], { cwd, timeoutMs: 10000 }),
+    runGit(['--no-optional-locks', 'status', '--porcelain=v2', '--branch'], { cwd, timeoutMs: 10000 }),
+    runGit(['--no-optional-locks', 'log', `-n${commits}`, '--format=%h%x1f%an%x1f%aI%x1f%s'], { cwd, timeoutMs: 10000 }),
   ]);
   if (statusResult.code !== 0) return gitFailure('status', statusResult);
 
