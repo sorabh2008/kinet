@@ -24,9 +24,10 @@ export const definition = {
 };
 
 // The glob pathspec excludes node_modules at any depth, gitignored or not;
-// the path always follows `--` (AC-0.8b).
+// the path always follows `--` (AC-0.8b) and is marked `:(literal)` so pathspec
+// magic in it cannot reach outside the project (06-security finding 3).
 export function buildGrepArgs(scanPath = '.') {
-  return ['grep', '-z', '-n', '-I', '--untracked', '-w', '-E', TICKET_MARKERS.join('|'), '--', scanPath, ':(exclude,glob)**/node_modules/**'];
+  return ['grep', '-z', '-n', '-I', '--untracked', '-w', '-E', TICKET_MARKERS.join('|'), '--', `:(literal)${scanPath}`, ':(exclude,glob)**/node_modules/**'];
 }
 
 function toResult(file, line, text) {

@@ -74,8 +74,20 @@ test('refuses bad arguments (AC-0.8a, AC-0.8c)', async () => {
   await assert.rejects(run({ scope: 'all' }, ctxFor(dir)), /scope must be one of/);
 });
 
+test('pathspec magic cannot reach outside a subdirectory project (06-security finding 3)', async () => {
+  const root = await gitRepo(await tempDir(), { 'app/a.js': 'a\n', 'other/secret.txt': 's\n' });
+  await writeFile(join(root, 'other', 'secret.txt'), 's\nleaked-secret\n');
+  const app = join(root, 'app');
+  for (const path of [':(top)', ':/other', ':!x.txt']) {
+    const text = await run({ path }, ctxFor(app));
+    assert.equal(text.includes('leaked-secret'), false, path);
+    assert.match(text, /^No changes/, path);
+  }
+});
+
 test('paths come after the -- separator (AC-0.8b)', () => {
   const args = buildDiffArgs({ scope: 'working', path: 'src' }, { stat: false });
+  assert.equal(args[0], '--literal-pathspecs');
   assert.ok(args.indexOf('--') < args.indexOf('src'));
   assert.ok(args.indexOf('--') >= 0);
 });

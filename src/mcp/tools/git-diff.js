@@ -30,10 +30,12 @@ function scopeLabel(scope, ref) {
   return 'working tree vs index (unstaged)';
 }
 
-// Paths always follow `--`, so git can never read them as options (AC-0.8b).
+// Paths always follow `--`, so git can never read them as options (AC-0.8b), and
+// --literal-pathspecs stops magic such as `:(top)` or `:/x` reaching outside the
+// project directory (06-security finding 3).
 export function buildDiffArgs({ scope = 'working', ref, path } = {}, { stat = false } = {}) {
   return [
-    'diff', '--no-color', '--no-ext-diff',
+    '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff',
     ...scopeArgs(scope, ref),
     ...(stat ? ['--stat'] : []),
     '--',

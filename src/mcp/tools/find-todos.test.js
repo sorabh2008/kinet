@@ -76,7 +76,17 @@ test('path is confined to the project and must exist (AC-0.8c)', async () => {
   assert.equal(await tool.run({ path: 'missing' }, ctxFor(dir)), 'Path not found: missing');
 });
 
-test('the scan path comes after the -- separator (AC-0.8b)', () => {
+test('the scan path comes after the -- separator as a literal pathspec (AC-0.8b)', () => {
   const args = tool.buildGrepArgs('src');
-  assert.ok(args.indexOf('--') >= 0 && args.indexOf('--') < args.indexOf('src'));
+  assert.ok(args.indexOf('--') >= 0 && args.indexOf('--') < args.indexOf(':(literal)src'));
+});
+
+test('pathspec magic in path cannot reach outside a subdirectory project (06-security finding 3)', async () => {
+  const root = await gitRepo(await tempDir(), { 'other/x.js': `// ${MARKER} outside the project\n` });
+  const app = join(root, 'app');
+  // A file literally named ":(top)" makes the path exist, so only :(literal) protects us.
+  await writeFiles(app, { ':(top)': 'nothing here\n', 'b.js': '// FIXME inside\n' });
+  const output = await tool.run({ path: ':(top)' }, ctxFor(app));
+  assert.equal(output.total, 0);
+  assert.equal(JSON.stringify(output).includes('outside the project'), false);
 });
