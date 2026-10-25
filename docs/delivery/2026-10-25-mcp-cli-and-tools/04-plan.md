@@ -45,7 +45,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/mcp/log.test.js src/mcp/server.test.js src/cli/mcp-routing.test.js` and `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | node bin/kinet.js mcp 2>/dev/null` (lists 9 tools).
   - Commit: `refactor(mcp): split server factory, add capped stderr logger and tool registry`
 
-- [ ] **S4 — T1 `kinet_git_status`**
+- [x] **S4 — T1 `kinet_git_status`**
   - Files: `src/mcp/tools/git-status.js` + test; register it in `local.js`; bump the count in `server.test.js`.
   - ACs: 1.1-1.4, 0.2, 0.3.
   - Verify by: `node --test src/mcp/tools/git-status.test.js src/mcp/server.test.js`

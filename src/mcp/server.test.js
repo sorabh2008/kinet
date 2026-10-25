@@ -9,7 +9,7 @@ const CORE_TOOL_NAMES = [
   'kinet_web_search', 'kinet_github_search', 'kinet_get_context', 'kinet_get_rules', 'kinet_get_prp',
   'kinet_memory_recall', 'kinet_memory_save', 'kinet_get_skill', 'kinet_validate',
 ];
-const EXPECTED_TOOL_COUNT = 9;
+const EXPECTED_TOOL_COUNT = 10;
 
 function silentLog() {
   const calls = [];
