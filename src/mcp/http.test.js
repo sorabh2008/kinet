@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
-import { createRequestHandler, isAllowedHost, isAllowedOrigin, isAllowedFetchSite, acceptsEventStream, tokenMatches, listenLocal } from './http.js';
+import { createRequestHandler, isPortAccepting, isAllowedHost, isAllowedOrigin, isAllowedFetchSite, acceptsEventStream, tokenMatches, listenLocal } from './http.js';
 import { freePort } from '../test-support/helpers.js';
 
 const TOKEN = 'a'.repeat(64);
@@ -116,4 +116,16 @@ test('/sse refuses browser subresource requests that cannot be MCP clients (06-s
   // Only a real event-stream request reaches session creation (which fails in this stub).
   assert.equal(log.lines.filter((l) => l.startsWith('ERROR http GET /sse')).length, 0);
   server.close();
+});
+
+test('isPortAccepting sees a listener on the wildcard address (06-test-plan F-2)', async () => {
+  const port = await freePort();
+  assert.equal(await isPortAccepting(port), false);
+  const holder = createServer();
+  await new Promise((resolve) => holder.listen(port, resolve));
+  try {
+    assert.equal(await isPortAccepting(port), true);
+  } finally {
+    holder.close();
+  }
 });

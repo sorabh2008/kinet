@@ -19,7 +19,7 @@ import { webSearch } from './tools/web-search.js';
 import { githubSearch } from './tools/github-search.js';
 import { localTools } from './tools/local.js';
 import { createLogger } from './log.js';
-import { createRequestHandler, listenLocal } from './http.js';
+import { createRequestHandler, isPortAccepting, listenLocal } from './http.js';
 
 const localByName = new Map(localTools.map((tool) => [tool.definition.name, tool.run]));
 
@@ -102,6 +102,10 @@ async function startHttp({ port, token, log, version, cwd }) {
     httpServer.closeAllConnections();
   }
 
+  if (await isPortAccepting(port)) {
+    log.error(`port ${port} is in use`);
+    process.exit(3);
+  }
   try {
     await listenLocal(httpServer, port);
   } catch (err) {

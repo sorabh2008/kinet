@@ -282,3 +282,18 @@ test('a hung server is reported unresponsive, kept, and force-killed by stop (06
     if (isPidAlive(pid)) process.kill(pid, 'SIGKILL');
   }
 });
+
+test('start fails when another process holds the port on the wildcard address (06-test-plan F-2)', { skip }, async () => {
+  const cwd = await project();
+  const port = await freePort();
+  const holder = createServer();
+  await new Promise((resolve) => holder.listen(port, resolve));
+  try {
+    const result = await runCli(['mcp', 'start', '--port', String(port)], { cwd });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, new RegExp(`port ${port} is in use`));
+    assert.equal(existsSync(runPaths(cwd).state), false);
+  } finally {
+    holder.close();
+  }
+});

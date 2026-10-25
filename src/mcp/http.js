@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import { connect } from 'node:net';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 const DEFAULT_MAX_SESSIONS = 16;
@@ -130,5 +131,21 @@ export function listenLocal(httpServer, port) {
       httpServer.off('error', onError);
       resolve(httpServer);
     });
+  });
+}
+
+// macOS lets a 127.0.0.1 bind succeed while another process holds the wildcard
+// address on the same port, silently taking its loopback traffic. A connect
+// probe catches that case before we listen (06-test-plan F-2).
+export function isPortAccepting(port, timeoutMs = 500) {
+  return new Promise((resolve) => {
+    const socket = connect({ host: '127.0.0.1', port });
+    const finish = (accepting) => {
+      socket.destroy();
+      resolve(accepting);
+    };
+    socket.setTimeout(timeoutMs, () => finish(false));
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
   });
 }
