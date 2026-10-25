@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join } from 'node:path';
@@ -111,4 +112,14 @@ test('--port must be an integer 1-65535', async () => {
   const { code, stderr } = await runCli(['mcp', '--port', '80abc'], { cwd: await tempDir() });
   assert.notEqual(code, 0);
   assert.match(stderr, /must be an integer 1-65535/);
+});
+
+test('subcommands reject stray positional arguments (06-test-plan F-6)', async () => {
+  const cwd = await tempDir();
+  for (const sub of ['start', 'stop', 'status', 'logs']) {
+    const { code, stderr } = await runCli(['mcp', sub, '9000'], { cwd });
+    assert.equal(code, 1, sub);
+    assert.match(stderr, new RegExp(`error: too many arguments for '${sub}'\\. Expected 0 arguments but got 1\\.`), sub);
+  }
+  assert.equal(existsSync(join(cwd, '.kinet')), false);
 });

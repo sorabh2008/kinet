@@ -88,6 +88,8 @@ function rejectParentPort(command) {
 
 mcp
   .command('start')
+  // Subcommands inherit allowExcessArguments() from `mcp`; a stray `start 9000` must fail.
+  .allowExcessArguments(false)
   .description(`start the background HTTP/SSE server for this project (default port ${DEFAULT_PORT})`)
   .option('--port <port>', 'port to listen on (127.0.0.1 only)', parsePort)
   .action(async (opts, command) => {
@@ -97,6 +99,7 @@ mcp
 
 mcp
   .command('stop')
+  .allowExcessArguments(false)
   .description('stop the background server for this project')
   .action(async (opts, command) => {
     rejectParentPort(command);
@@ -106,6 +109,7 @@ mcp
 
 mcp
   .command('status')
+  .allowExcessArguments(false)
   .description('show whether the background server is running (exit 0 running, 1 stopped)')
   .action(async (opts, command) => {
     rejectParentPort(command);
@@ -115,6 +119,7 @@ mcp
 
 mcp
   .command('logs')
+  .allowExcessArguments(false)
   .description("print the background server's log")
   .option('-n, --lines <n>', 'number of lines to show', parsePositiveInt, 50)
   .option('-f, --follow', 'keep printing new lines until Ctrl-C')
