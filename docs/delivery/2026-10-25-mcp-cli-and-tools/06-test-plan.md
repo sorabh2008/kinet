@@ -430,8 +430,21 @@ Steps: `cd "$FX"; mcp_rpc "$(call 2 kinet_find_todos '{"path":"nope"}')"`
 Expected: `isError=false "Path not found: nope"`.
 
 ### TC-64 Only one script runs at a time (design §4.4)
-Steps: `cd "$FX"; MCP_WAIT=4 MCP_MAX=200 mcp_rpc "$(call 2 kinet_run_script '{"script":"slow","timeoutSeconds":2}')" "$(call 3 kinet_run_script '{"script":"ok"}')"`
-Expected: `id=2 isError=false "script: slow … result: timed out after 2 s; process group killed …"` and `id=3 isError=false "A script is already running (slow); wait for it to finish."`. `slow` holds the slot for 2 s, so the result does not depend on timing.
+*Corrected at release-gate round 3 (BUG-4, a test-case defect).* The original step sent both calls at once and expected `slow` to win. The server handles the two calls concurrently and claims the slot only after reading `package.json`, so either call could win (`ok` won 6 of 20 runs in round 2). The correction keeps the same assertion (exactly one script runs, the other gets the documented busy result) but removes the race: the second call is sent only after the `slow` script's process is confirmed running.
+```bash
+cd "$FX"; pgrep -f 'setTimeout\(\(\)=>\{\},60000\)' >/dev/null; echo "pre-slow=$?"
+{ printf '%s\n' "$INIT" "$NOTE" "$(call 2 kinet_run_script '{"script":"slow","timeoutSeconds":4}')"
+  for i in $(seq 1 50); do pgrep -f 'setTimeout\(\(\)=>\{\},60000\)' >/dev/null && { echo "slow-confirmed-running" >&2; break; }; sleep 0.1; done
+  printf '%s\n' "$(call 3 kinet_run_script '{"script":"ok"}')"; sleep 5; } 2>"$TSR/tc64-gate.txt" | node "$K" mcp 2>"$TSR/last-stderr.txt" | MCP_MAX=200 node "$TSR/fmt.js"
+cat "$TSR/tc64-gate.txt"
+```
+Expected:
+- `pre-slow=1`
+- `id=2 isError=false "script: slow … result: timed out after 4 s; process group killed …"`
+- `id=3 isError=false "A script is already running (slow); wait for it to finish."`. id=3 has no `exit code:` line, so `ok` did not run.
+- `slow-confirmed-running`
+
+Determinism: repeat the block 20 times. All 20 must give the same result.
 
 ### TC-62 Pathspec magic is taken literally (06-security finding 3). AC-0.8c
 Steps: `cd "$FX/src"; MCP_MAX=300 mcp_rpc "$(call 2 kinet_git_diff '{"path":":/"}')" "$(call 3 kinet_git_diff '{"path":":(top)package.json"}')" "$(call 4 kinet_find_todos '{"path":":/"}')" "$(call 5 kinet_git_diff '{"path":"*.js"}')" "$(call 6 kinet_git_diff '{}')"` (the server's cwd is a subdirectory of the repo)
@@ -914,6 +927,72 @@ Expected: `update-exit=0`, `REGENERATED` (the `> Generated: <ISO>` line in CLAUD
 
 ---
 
+## 10b. Regression cases added at the release gate
+
+These cases were added under `/test-and-ship`. Cases may be added, never removed or weakened.
+
+### TC-B1 BUG-1 regression: SIGINT during `start` leaves no lock (round 2). AC-7.5
+```bash
+mkdir -p /tmp/bug1 && cd /tmp/bug1 && git init -q
+K=/Users/sjain/dev/personal/kinet/bin/kinet.js
+leaks=0; n=0; c130=0
+for r in 1 2 3 4 5; do for d in 0.02 0.03 0.04 0.05 0.06 0.07 0.08 0.09 0.10 0.11 0.12 0.13; do
+  n=$((n+1)); node "$K" mcp start --port 47317 >/dev/null 2>&1 & S=$!; sleep $d; kill -INT $S; wait $S; e=$?; [ $e = 130 ] && c130=$((c130+1))
+  if [ -e .kinet/run/mcp.lock ] || ls .kinet/run/mcp.lock.*.tmp >/dev/null 2>&1; then leaks=$((leaks+1)); echo "LOCK d=$d exit=$e"; rm -f .kinet/run/mcp.lock .kinet/run/mcp.lock.*.tmp; fi
+  node "$K" mcp stop >/dev/null; rm -f .kinet/run/mcp.json
+done; done; echo "trials=$n interrupted(130)=$c130 lock-leaks=$leaks / $n"
+pgrep -f "kinet.js mcp --port 47317"; echo "no-orphan=$?"; cd /tmp && rm -rf /tmp/bug1
+```
+Expected: `trials=60 interrupted(130)=60 lock-leaks=0 / 60`, `no-orphan=1`.
+
+### TC-B2 BUG-2 regression: real-terminal Ctrl-C during `start`, 192 tries (round 3). AC-7.5
+This needs a real TTY: a terminal Ctrl-C signals the whole foreground process group, which `kill -INT` cannot reproduce. The script runs an interactive `bash -i` in a pty, types `kinet mcp start`, and writes `\x03` to the terminal 20-125 ms later (16 delays × 12 repetitions). That stays inside `start`'s ≥ 150 ms run, so every try interrupts a live `start`.
+```bash
+source /tmp/kinet-tsr/env.sh; cat > "$TSR/tcb2.py" <<'PY2'
+import os, pty, time, select, subprocess, glob
+K='/Users/sjain/dev/personal/kinet/bin/kinet.js'; FX='/private/tmp/kinet-tsr/fx'; RUN=FX+'/.kinet/run'; ERR='/private/tmp/kinet-tsr/tcb2-err.txt'
+def trial(delay):
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(FX); os.execvpe('bash', ['bash','--norc','--noprofile','-i'], dict(os.environ, PS1='$ ', TERM='dumb'))
+    out = b''
+    def drain(t):
+        nonlocal out
+        end = time.time() + t
+        while time.time() < end:
+            r,_,_ = select.select([fd],[],[],0.02)
+            if r:
+                try: out += os.read(fd, 65536)
+                except OSError: return
+    drain(0.4)
+    os.write(fd, f'node {K} mcp start --port 47317 >/dev/null 2>{ERR}\n'.encode()); drain(delay)
+    os.write(fd, b'\x03'); drain(0.6)
+    os.write(fd, b'echo "EXIT=$?"\n'); drain(0.3)
+    os.write(fd, b'exit\n'); drain(0.2)
+    try: os.waitpid(pid, 0)
+    except ChildProcessError: pass
+    e = [l for l in out.decode(errors='replace').replace('\r','').split('\n') if l.startswith('EXIT=')]
+    return e[0] if e else 'EXIT=?'
+delays = [round(0.020 + 0.007*i, 3) for i in range(16)]
+n = crash = locks = not130 = orphans = 0
+for rep in range(12):
+    for d in delays:
+        n += 1; open(ERR, 'w').close()
+        ex = trial(d); err = open(ERR).read()
+        lk = os.path.exists(RUN+'/mcp.lock') or bool(glob.glob(RUN+'/mcp.lock.*.tmp'))
+        o = subprocess.run(['pgrep','-f','kinet.js mcp --port 47317'], capture_output=True, text=True).stdout.split()
+        if ('Error' in err) or ('    at ' in err): crash += 1
+        if lk: locks += 1
+        if ex != 'EXIT=130': not130 += 1
+        if o: orphans += 1
+        if lk or ex != 'EXIT=130' or err.strip() or o: print(f'ISSUE d={d} {ex} lock={lk} orphan={o} stderr={err.strip()[:160]!r}')
+        subprocess.run(f'cd {FX} && node {K} mcp stop >/dev/null 2>&1; pkill -f "kinet.js mcp --port 47317"; rm -f {RUN}/mcp.lock {RUN}/mcp.lock.*.tmp {RUN}/mcp.json', shell=True)
+print(f'trials={n} crashes={crash} stale-locks={locks} not-130={not130} orphans={orphans}')
+PY2
+python3 -I "$TSR/tcb2.py"
+```
+Expected: no `ISSUE` lines, and `trials=192 crashes=0 stale-locks=0 not-130=0 orphans=0`.
+
 ## 11. Manual cases (M). A human at a real terminal
 
 ### TC-M1 Ctrl-C during `start`. Design: review-2 finding 2, AC-7.5
@@ -1021,6 +1100,7 @@ A = covered by the repo suite inside TC-1 (test name in brackets). S = scripted 
 | 11.2 | TC-2, TC-3 (S) |
 | 11.3 | TC-M5 (M); A [README documents the lifecycle commands and localhost binding] |
 | 01 §8 / D8 (Host/Origin), 06-security finding 4 | TC-110, TC-111, TC-115 (S); A [guard refuses foreign Host and Origin headers] |
+| Release-gate regressions | TC-B1 (BUG-1), TC-B2 (BUG-2) → AC-7.5 |
 | Design extras (not ACs) | TC-4, TC-43, TC-60, TC-61, TC-64, TC-87 (F-6), TC-91, TC-92, TC-95, TC-100, TC-103, TC-112, TC-114, TC-120-125 |
 
 Every AC from 0.1 to 11.3 has at least one scripted or manual case and, except 11.1/11.2 (gates by nature), at least one automated test.
