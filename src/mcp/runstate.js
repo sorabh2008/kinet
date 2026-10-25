@@ -3,6 +3,7 @@
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { safeExec } from '../utils/exec.js';
 
 export const DEFAULT_PORT = 7345;
 
@@ -162,6 +163,39 @@ export async function probeHealth(port, token, timeoutMs = 1000) {
   }
 }
 
+// `ps` etime is [[dd-]hh:]mm:ss.
+export function parseElapsed(etime) {
+  const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(etime.trim());
+  if (!match) return null;
+  const [, d = 0, h = 0, m, s] = match.map((part) => (part === undefined ? undefined : Number(part)));
+  return ((d * 24 + h) * 60 + m) * 60 + s;
+}
+
+// The daemon is always spawned as `<node> <...>/bin/kinet.js mcp --port <port>` and
+// it started before it recorded startedAt. Both must hold for the pid to be ours.
+// Anything we cannot confirm (no ps, e.g. Windows) counts as not ours: never signal it.
+export async function looksLikeOurDaemon({ pid, port, startedAt }) {
+  let result;
+  try {
+    result = await safeExec('ps', ['-o', 'etime=', '-o', 'command=', '-p', String(pid)], {
+      timeoutMs: 5000,
+      env: { ...process.env, LC_ALL: 'C' },
+    });
+  } catch {
+    return false;
+  }
+  const line = result.stdout.trim();
+  if (result.code !== 0 || !line) return false;
+  const [etime, ...commandParts] = line.split(/\s+/);
+  const command = commandParts.join(' ');
+  if (!/(^|[/\\])kinet\.js mcp --port /.test(command) || !command.endsWith(`mcp --port ${port}`)) return false;
+  const elapsed = parseElapsed(etime);
+  if (elapsed === null) return false;
+  // etime is whole seconds rounded down, so allow one second of slack.
+  const processStart = Date.now() - elapsed * 1000;
+  return processStart <= Date.parse(startedAt) + 1000;
+}
+
 // D5: running only if our pid answers on our port with our token, for the
 // project directory this command runs in.
 // Pure: it never deletes anything; callers decide what to clear.
@@ -177,7 +211,10 @@ export async function checkIdentity(cwd) {
   // Our port accepted the connection but never answered: the server is alive but
   // hung (blocked loop, SIGSTOP, slow wake). Keep the state so `stop` can still
   // force-kill it instead of orphaning it (06-test-plan F-1).
+  // A live pid alone is not proof (review-6a finding 2), so the process must
+  // also look like our daemon before we report it as ours or signal it.
   if (health.error === 'TimeoutError') {
+    if (!(await looksLikeOurDaemon(state))) return { state: 'stale', reason: 'pid is not this project\'s server' };
     return { state: 'unresponsive', info: { ...state, uptimeMs: Date.now() - Date.parse(state.startedAt) } };
   }
   if (health.status !== 200) return { state: 'stale', reason: `health check failed (${health.status ?? health.error})` };

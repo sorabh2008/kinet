@@ -297,3 +297,31 @@ test('start fails when another process holds the port on the wildcard address (0
     holder.close();
   }
 });
+
+test('an unrelated process holding the port silently is never reported unresponsive or killed (review-6a finding 2, AC-9.3)', { skip }, async () => {
+  const cwd = await project();
+  const port = await freePort();
+  // Accepts connections but never answers HTTP, so /health times out.
+  const decoy = spawn(process.execPath, ['-e', 'require("net").createServer(() => {}).listen(+process.argv[1], "127.0.0.1", () => console.log("ready"))', String(port)], { stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    let ready = '';
+    decoy.stdout.setEncoding('utf8').on('data', (d) => { ready += d; });
+    await waitFor(() => ready.includes('ready'));
+    const state = { pid: decoy.pid, port, token: 'd'.repeat(64), cwd, startedAt: new Date(Date.now() + 5000).toISOString(), logPath: runPaths(cwd).log };
+
+    await ensureRunDir(cwd);
+    await writeState(cwd, state);
+    const status = await runCli(['mcp', 'status'], { cwd });
+    assert.equal(status.code, 1);
+    assert.equal(status.stdout, 'stopped (stale)\n');
+
+    await writeState(cwd, state);
+    const stop = await runCli(['mcp', 'stop'], { cwd });
+    assert.equal(stop.code, 0);
+    assert.equal(stop.stdout, 'not running (cleared stale state)\n');
+    assert.equal(isPidAlive(decoy.pid), true);
+    assert.equal(existsSync(runPaths(cwd).state), false);
+  } finally {
+    decoy.kill('SIGKILL');
+  }
+});

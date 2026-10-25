@@ -5,7 +5,7 @@ import { unwatchFile, watchFile } from 'node:fs';
 import { open, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, LockHeldError,
+  ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, looksLikeOurDaemon, LockHeldError,
   UnsafeRunDirError, LOG_OPEN_FLAGS,
 } from '../mcp/runstate.js';
 
@@ -247,6 +247,11 @@ export async function runMcpStop({ cwd = process.cwd(), graceMs = STOP_GRACE_MS,
   await requestShutdown(port, token);
   let forced = false;
   if (!(await waitForExit(pid, graceMs, pollMs))) {
+    // Re-confirm right before SIGKILL: never force-kill a pid we cannot prove is ours (AC-9.3).
+    if (!(await looksLikeOurDaemon(identity.info))) {
+      await clearState(cwd);
+      return out('not running (cleared stale state)');
+    }
     try {
       process.kill(pid, 'SIGKILL');
       forced = true;

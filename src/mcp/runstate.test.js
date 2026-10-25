@@ -7,7 +7,7 @@ import { lstat, mkdir, open, readFile, stat, symlink, utimes, writeFile } from '
 import { join } from 'node:path';
 import {
   acquireLock, ensureRunDir, runPaths, readState, writeState, clearState, checkIdentity, isPidAlive, LockHeldError,
-  UnsafeRunDirError, LOG_OPEN_FLAGS,
+  UnsafeRunDirError, LOG_OPEN_FLAGS, parseElapsed, looksLikeOurDaemon,
 } from './runstate.js';
 import { tempDir, freePort } from '../test-support/helpers.js';
 
@@ -139,4 +139,32 @@ test('the log open flags refuse a symlinked log file', posixOnly, async () => {
   await symlink(victim, runPaths(cwd).log);
   await assert.rejects(open(runPaths(cwd).log, LOG_OPEN_FLAGS, 0o600), (err) => err.code === 'ELOOP');
   assert.equal(await readFile(victim, 'utf8'), 'keep\n');
+});
+
+test('parseElapsed reads ps etime', () => {
+  assert.equal(parseElapsed('00:05'), 5);
+  assert.equal(parseElapsed(' 01:02:03'), 3723);
+  assert.equal(parseElapsed('2-00:00:01'), 172801);
+  assert.equal(parseElapsed('soon'), null);
+});
+
+test('looksLikeOurDaemon needs our command line and a start before startedAt', posixOnly, async () => {
+  const notOurs = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+  const dir = await tempDir();
+  await mkdir(join(dir, 'bin'));
+  await writeFile(join(dir, 'bin', 'kinet.js'), 'setTimeout(() => {}, 30000);');
+  const port = 7399;
+  const lookalike = spawn(process.execPath, [join(dir, 'bin', 'kinet.js'), 'mcp', '--port', String(port)], { stdio: 'ignore' });
+  try {
+    const now = new Date().toISOString();
+    assert.equal(await looksLikeOurDaemon({ pid: notOurs.pid, port, startedAt: now }), false);
+    assert.equal(await looksLikeOurDaemon({ pid: lookalike.pid, port, startedAt: now }), true);
+    assert.equal(await looksLikeOurDaemon({ pid: lookalike.pid, port: port + 1, startedAt: now }), false);
+    // Started an hour after the state says the server started: a reused pid.
+    const longAgo = new Date(Date.now() - 3600_000).toISOString();
+    assert.equal(await looksLikeOurDaemon({ pid: lookalike.pid, port, startedAt: longAgo }), false);
+  } finally {
+    notOurs.kill('SIGKILL');
+    lookalike.kill('SIGKILL');
+  }
 });

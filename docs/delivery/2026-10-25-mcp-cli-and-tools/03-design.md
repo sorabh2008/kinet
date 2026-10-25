@@ -151,6 +151,7 @@ export const TOOL_DEFINITIONS                // [...existing9, ...localTools.map
   5. Registers `process.on('exit', () => killActiveProcessGroups('SIGKILL'))`. This is review-2 finding 4: it also covers stdio mode when the client goes away.
   6. Registers `SIGTERM` and `SIGINT` → `shutdown(<signal>)`.
   7. HTTP modes: `http.createServer(handler)`, then `listen(port, '127.0.0.1')`.
+     - Before listening, a connect probe to `127.0.0.1:<port>`: if it is accepted, `log.error(\`port ${port} is in use\`)` and `process.exit(3)`. macOS otherwise lets the 127.0.0.1 bind succeed next to another process's wildcard listener (06-test-plan F-2).
      - On `EADDRINUSE`: `log.error(\`port ${port} is in use\`)`, then `process.exit(3)`.
      - On success: `log.info(\`listening http://127.0.0.1:${port}/sse\`)`.
   8. stdio mode: the same as today (`StdioServerTransport`). Nothing is written to stdout except protocol messages.
@@ -405,6 +406,7 @@ duration: 4.2 s
 - `stop`, `status`: no options. If `cmd.parent.opts().port` is set → `cmd.error("--port only applies to 'kinet mcp start' and foreground 'kinet mcp --port <n>'")`. This prevents a user thinking they are targeting a port.
 - `logs`: `-n, --lines <n>` with `parsePositiveInt`, default 50; `-f, --follow`. The same parent `--port` rejection applies.
 - Each subcommand lazy-imports `../src/cli/mcp.js`, following the existing pattern.
+- **Stray arguments (06-test-plan F-6):** subcommands inherit `allowExcessArguments()` from `mcp`, so each of `start`, `stop`, `status` and `logs` calls `.allowExcessArguments(false)`. `kinet mcp start 9000` prints commander's stderr `error: too many arguments for 'start'. Expected 0 arguments but got 1.` and exits 1 (same text with `'stop'`, `'status'`, `'logs'`). Nothing is started or written. `kinet mcp foo` still gives the unknown-subcommand error.
 
 ### 5.2 `kinet mcp start [--port <n>]`
 
@@ -447,7 +449,8 @@ KINET MCP server started
 | running | block B | 0 | none |
 | stopped (no state) | `stopped` | 1 | none |
 | stale | `stopped (stale)` | 1 | `clearState` |
-| unresponsive (pid alive, `/health` timed out) | block B with `unresponsive` as the first line, no uptime/url, plus a `hint:` line to run `kinet mcp stop` | 2 | none: the state is kept so `stop` can force-kill it |
+| unresponsive: state cwd matches, pid alive, `/health` timed out, **and** the pid is confirmed as our daemon (see below) | block U | 2 | none: the state is kept so `stop` can force-kill it |
+| pid alive and `/health` timed out, but the pid is **not** confirmed as our daemon | `stopped (stale)` | 1 | `clearState`; the pid is never signalled |
 
 Block B:
 ```
@@ -459,12 +462,26 @@ running
   log:    /abs/project/.kinet/run/mcp.log
 ```
 
+Block U (stdout, exit 2):
+```
+unresponsive
+  pid:    12345
+  port:   7345
+  log:    /abs/project/.kinet/run/mcp.log
+  hint:   the process is alive but /health did not answer; run `kinet mcp stop` to force-kill it
+```
+
+**Confirming a hung pid is ours (review-6a finding 2).** `looksLikeOurDaemon` runs `ps -o etime= -o command= -p <pid>` (async, `LC_ALL=C`). The pid counts as ours only if the command line contains `kinet.js mcp --port ` and ends with `mcp --port <state.port>`, **and** the process start (`now - etime`, 1 s slack) is no later than the state's `startedAt`. If `ps` fails or is unavailable (Windows), the pid is treated as not ours. `stop` repeats this check right before any SIGKILL.
+
+`start` with an unresponsive server: stderr `Error: the MCP server for this project (pid 12345) is not responding. Run: kinet mcp stop`, exit 1.
+
 The first line is always exactly `running`, `unresponsive`, `stopped` or `stopped (stale)`, so scripts can match on it. Identity also requires the state's `cwd` and the `/health` `cwd` to equal `realpath` of the directory the command runs in, so a state file copied with the project (`cp -R`) reads as `stopped (stale)` there (06-test-plan F-5). `status` never spawns, signals or POSTs anything (AC-8.4).
 
 ### 5.4 `kinet mcp stop`
 
 1. `checkIdentity`. If the result is `stopped`, print `not running`. If it is `stale`, print `not running (cleared stale state)` and run `clearState`. Exit 0 in both cases (AC-9.2). Nothing is signalled.
 2. `running` or `unresponsive`: `POST /shutdown` with the token (1 s timeout; errors are ignored). A hung server ignores it and is force-killed in step 3 (06-test-plan F-1).
+   - Before the SIGKILL in step 3, `looksLikeOurDaemon` is re-checked. If it fails, the state is cleared, stdout is `not running (cleared stale state)`, exit 0, and nothing is signalled. For a hung server, stdout is `stopped (pid 12345, force-killed after 5 s)`, exit 0.
 3. Poll `isPidAlive(pid)` every 100 ms for up to 5000 ms. If it is still alive, send `process.kill(pid, 'SIGKILL')`.
 4. `clearState`. stdout: `stopped (pid 12345)` or `stopped (pid 12345, force-killed after 5 s)`. Exit 0.
 5. If `SIGKILL` throws anything other than `ESRCH` → `Error: could not stop pid <n>: <code>`, exit 1, and the state is kept.
@@ -485,7 +502,8 @@ The first line is always exactly `running`, `unresponsive`, `stopped` or `stoppe
 | `kinet mcp` (stdio) | normal end | bad `KINET_MCP_TOKEN` | — |
 | `kinet mcp --port N` | shutdown | bad token | 3 = port in use |
 | `kinet mcp <unknown>` / bad option | — | commander error (exit 1) | — |
-| `start` | started / already running | any failure | 130 = interrupted |
+| `kinet mcp <sub> <stray arg>` | — | `error: too many arguments for '<sub>'. Expected 0 arguments but got 1.` | — |
+| `start` | started / already running | any failure, including an unresponsive server or a port another process accepts on | 130 = interrupted |
 | `status` | running | stopped / stale | 2 = unresponsive |
 | `stop` | stopped / not running | could not kill | — |
 | `logs` | printed / follow ended | no log file | — |

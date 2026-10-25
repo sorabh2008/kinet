@@ -4,7 +4,8 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { formatUptime, lastLines, abortStart, runMcpStop } from './mcp.js';
 import { acquireLock, ensureRunDir, runPaths, isPidAlive, writeState, readState } from '../mcp/runstate.js';
-import { tempDir, waitFor, freePort } from '../test-support/helpers.js';
+import { tempDir, waitFor, freePort, writeFiles } from '../test-support/helpers.js';
+import { join } from 'node:path';
 
 test('formatUptime', () => {
   assert.equal(formatUptime(45_000), '45s');
@@ -31,15 +32,17 @@ test('abortStart kills the detached child and removes the lock (review-2 finding
   await waitFor(() => !existsSync(runPaths(cwd).lock), 3000);
 });
 
-// A fake daemon that passes the identity check but ignores /shutdown.
+// A fake daemon that passes the identity check but ignores /shutdown. It runs from a
+// file at <dir>/bin/kinet.js with `mcp --port <port>`, so its command line looks like ours.
 const STUBBORN_SERVER = `
 import http from 'node:http';
-const [port, token] = process.argv.slice(1);
+const port = Number(process.argv[4]);
+const token = process.env.STUB_TOKEN;
 http.createServer((req, res) => {
   if (req.headers['x-kinet-token'] !== token) return res.writeHead(401).end();
   if (req.url === '/health') return res.end(JSON.stringify({ pid: process.pid, cwd: process.cwd() }));
   res.writeHead(202).end();
-}).listen(Number(port), '127.0.0.1', () => process.stdout.write('ready'));
+}).listen(port, '127.0.0.1', () => process.stdout.write('ready'));
 `;
 
 async function captureStdout(fn) {
@@ -58,12 +61,19 @@ test('stop force-kills a server that ignores /shutdown (AC-9.1, R3-3b)', { skip:
   const cwd = await tempDir();
   const port = await freePort();
   const token = 'c'.repeat(64);
-  const child = spawn(process.execPath, ['--input-type=module', '-e', STUBBORN_SERVER, String(port), token], { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+  const stubDir = await tempDir();
+  await writeFiles(stubDir, { 'package.json': '{"type":"module"}', 'bin/kinet.js': STUBBORN_SERVER });
+  const child = spawn(process.execPath, [join(stubDir, 'bin', 'kinet.js'), 'mcp', '--port', String(port)], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'ignore'],
+    env: { ...process.env, STUB_TOKEN: token },
+  });
   let ready = '';
   child.stdout.setEncoding('utf8').on('data', (d) => { ready += d; });
   await waitFor(() => ready === 'ready');
 
   await ensureRunDir(cwd);
+  // startedAt is recorded after the process started, as the real daemon does.
   await writeState(cwd, { pid: child.pid, port, token, cwd, startedAt: new Date().toISOString(), logPath: runPaths(cwd).log });
   const output = await captureStdout(() => runMcpStop({ cwd, graceMs: 300, pollMs: 50 }));
 
