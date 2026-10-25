@@ -37,14 +37,19 @@ export async function writeFiles(dir, files) {
 
 export function run(cmd, args, { cwd, env, input } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    // stdin is only piped when there is input: ending a pipe to a child that has
+    // already exited raises EPIPE and made tests flaky.
+    const child = spawn(cmd, args, { cwd, env: env ?? process.env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (d) => { stdout += d; });
     child.stderr.setEncoding('utf8').on('data', (d) => { stderr += d; });
     child.once('error', reject);
     child.once('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
-    child.stdin.end(input ?? '');
+    if (input !== undefined) {
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+    }
   });
 }
 
