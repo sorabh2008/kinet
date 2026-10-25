@@ -69,7 +69,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/mcp/tools/run-script.test.js`
   - Commit: `feat(mcp): add kinet_run_script tool`
 
-- [ ] **S8 — T5 `kinet_check_deps`**
+- [x] **S8 — T5 `kinet_check_deps`**
   - Files: `src/mcp/tools/check-deps.js` + test (canned-JSON parsers and an unreachable registry); `local.js`; `src/mcp/no-sync.test.js` (all 5 tools now exist).
   - ACs: 5.1-5.5, 0.3, 0.9, 0.1 (14 tools listed).
   - Verify by: `npm test` and the S3 stdio pipe command (now lists 14 tools).
