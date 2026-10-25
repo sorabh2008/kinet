@@ -38,7 +38,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/utils/args.test.js`
   - Commit: `feat(utils): add argument hardening and port/line parsers`
 
-- [ ] **S3 — Logger, server split and empty tool registry**
+- [x] **S3 — Logger, server split and empty tool registry**
   - Files: `src/mcp/log.js` + `log.test.js`; `src/mcp/server.js` (`createKinetServer`, tool-call logging, `capText` guard, `localByName` lookup before the existing switch, token read and validated at boot); `src/mcp/tools/local.js` (empty array for now); `src/mcp/server.test.js`; the bare-stdio part of `src/cli/mcp-routing.test.js`.
   - **[R3-3a]:** the logger-cap test uses a small `capBytes` and a fake stream. Assert that the `log cap reached` line appears once, that `info`/`tool` lines are dropped after it, and that `error` and `shutdown` still get through.
   - ACs: 6.1, 6.3, 10.3 (the logger), 0.1 (the 9 existing tools are unchanged).
