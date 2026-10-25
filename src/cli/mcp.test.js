@@ -25,19 +25,39 @@ test('lastLines', () => {
 test('abortStart kills the detached child and removes our lock (review-2 finding 2, BUG-1)', { skip: process.platform === 'win32' }, async () => {
   const cwd = await tempDir();
   await ensureRunDir(cwd);
-  await acquireLock(cwd);
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: 'ignore' });
   await waitFor(() => isPidAlive(child.pid));
-  abortStart(child, runPaths(cwd).lock);
+  const session = { aborted: false, child, lockPromise: acquireLock(cwd) };
+  await abortStart(session);
+  assert.equal(session.aborted, true);
   assert.equal(existsSync(runPaths(cwd).lock), false);
   await waitFor(() => !isPidAlive(child.pid), 3000);
 });
 
-test('abortStart never removes another start\'s lock', async () => {
+test('abortStart never throws when the kill fails with EPERM and still removes our lock (BUG-2)', async () => {
   const cwd = await tempDir();
   await ensureRunDir(cwd);
-  await writeFile(runPaths(cwd).lock, JSON.stringify({ pid: process.pid + 1, createdAt: new Date().toISOString() }));
-  abortStart(null, runPaths(cwd).lock);
+  const eperm = () => {
+    const err = new Error('kill EPERM');
+    err.code = 'EPERM';
+    throw err;
+  };
+  const session = { aborted: false, child: { pid: 999999 }, lockPromise: acquireLock(cwd) };
+  await abortStart(session, { kill: eperm });
+  assert.equal(existsSync(runPaths(cwd).lock), false);
+});
+
+test('abortStart waits for an in-flight lock and leaves another start\'s lock alone', async () => {
+  const cwd = await tempDir();
+  await ensureRunDir(cwd);
+  // In flight: the signal arrived before acquireLock resolved.
+  const inFlight = { aborted: false, child: null, lockPromise: acquireLock(cwd) };
+  await abortStart(inFlight);
+  assert.equal(existsSync(runPaths(cwd).lock), false);
+
+  await writeFile(runPaths(cwd).lock, JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+  const loser = { aborted: false, child: null, lockPromise: acquireLock(cwd) };
+  await abortStart(loser);
   assert.equal(existsSync(runPaths(cwd).lock), true);
 });
 

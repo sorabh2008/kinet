@@ -1,12 +1,12 @@
 // `kinet mcp start|status|stop|logs`: manage one background HTTP/SSE MCP server per project.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { readFileSync, unlinkSync, unwatchFile, watchFile } from 'node:fs';
+import { unwatchFile, watchFile } from 'node:fs';
 import { open, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
   ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, looksLikeOurDaemon, LockHeldError,
-  UnsafeRunDirError, LOG_OPEN_FLAGS, lockTmpPath,
+  UnsafeRunDirError, LOG_OPEN_FLAGS,
 } from '../mcp/runstate.js';
 
 const BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url));
@@ -64,26 +64,29 @@ function killGroup(pid, signal) {
   }
 }
 
-// Removes the lock only if this process owns it. Synchronous on purpose: it runs
-// in a signal handler right before process.exit(), where async work never finishes.
-function releaseLockSync(lockPath) {
+// Never throws: on Ctrl-C the terminal signals the whole foreground group, so the
+// child may already be gone (ESRCH) or mid-exit (EPERM on macOS) (BUG-2).
+function killGroupQuietly(pid, kill = process.kill) {
   try {
-    unlinkSync(lockTmpPath(lockPath));
+    if (IS_WINDOWS) kill(pid, 'SIGKILL');
+    else kill(-pid, 'SIGKILL');
   } catch {
-    // No temp file left: nothing to do.
-  }
-  try {
-    if (JSON.parse(readFileSync(lockPath, 'utf8')).pid === process.pid) unlinkSync(lockPath);
-  } catch {
-    // No lock, or another start's lock: leave it alone.
+    // ESRCH/EPERM mean it is already gone or going; nothing else is worth crashing for.
   }
 }
 
-// Synchronous so it is safe inside a signal handler; the detached child does not
-// receive the terminal's Ctrl-C, so it must be killed explicitly.
-export function abortStart(child, lockPath) {
-  if (child) killGroup(child.pid, 'SIGKILL');
-  releaseLockSync(lockPath);
+// Cleanup for an interrupted start. The lock bookkeeping lives in memory
+// (`session.lockPromise` resolves to our release function), so nothing has to be
+// read back from disk and no *Sync call is needed (BUG-3). Never rejects.
+export async function abortStart(session, { kill = process.kill } = {}) {
+  session.aborted = true;
+  if (session.child) killGroupQuietly(session.child.pid, kill);
+  const release = session.lockPromise ? await session.lockPromise.catch(() => null) : null;
+  try {
+    await release?.();
+  } catch {
+    // The lock is already gone.
+  }
 }
 
 // Resolves { body } once the child answers /health, { exitCode } if it dies, or { timedOut }.
@@ -149,25 +152,27 @@ async function reportStartFailure(result, port, logPath) {
 
 export async function runMcpStart({ port }) {
   const cwd = process.cwd();
-  const { lock } = runPaths(cwd);
-  let child = null;
+  const session = { aborted: false, child: null, lockPromise: null };
   // Installed before the lock is taken, so Ctrl-C at any point kills what we
-  // started and removes our lock (BUG-1, review-2 finding 2).
+  // started and removes our lock (BUG-1, review-2 finding 2). Repeat signals
+  // while cleaning up are ignored; exit 130 once cleanup has settled.
   const onSignal = () => {
-    abortStart(child, lock);
-    process.exit(130);
+    if (session.aborted) return;
+    abortStart(session).finally(() => process.exit(130));
   };
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   try {
-    await startWithLock(cwd, port, (spawned) => { child = spawned; });
+    await startWithLock(cwd, port, session);
   } finally {
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
+    if (!session.aborted) {
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+    }
   }
 }
 
-async function startWithLock(cwd, port, onSpawn) {
+async function startWithLock(cwd, port, session) {
   let paths;
   try {
     paths = await ensureRunDir(cwd);
@@ -176,8 +181,9 @@ async function startWithLock(cwd, port, onSpawn) {
     throw err;
   }
   let release;
+  session.lockPromise = acquireLock(cwd);
   try {
-    release = await acquireLock(cwd);
+    release = await session.lockPromise;
   } catch (err) {
     if (err instanceof LockHeldError) return fail(err.message);
     throw err;
@@ -193,10 +199,15 @@ async function startWithLock(cwd, port, onSpawn) {
 
     const token = randomBytes(32).toString('hex');
     await rotateLog(paths);
+    if (session.aborted) return;
     const child = await spawnDaemon(cwd, port, token, paths.log);
-    onSpawn(child);
+    session.child = child;
+    // The signal may have landed while the spawn was in flight, after the
+    // handler's kill step: kill the child here so it is never orphaned.
+    if (session.aborted) return killGroupQuietly(child.pid);
 
     const result = await waitForHealthy(child, port, token);
+    if (session.aborted) return;
     if (!result.body) {
       if (child.exitCode === null && child.signalCode === null) killGroup(child.pid, 'SIGKILL');
       return await reportStartFailure(result, port, paths.log);

@@ -18,7 +18,7 @@ test('new code uses no synchronous blocking calls (AC-0.9)', async () => {
   const files = [
     ...(await newToolFiles()),
     join('utils', 'exec.js'), join('utils', 'args.js'),
-    join('mcp', 'http.js'), join('mcp', 'log.js'), join('mcp', 'runstate.js'),
+    join('mcp', 'http.js'), join('mcp', 'log.js'), join('mcp', 'runstate.js'), join('cli', 'mcp.js'),
   ];
   assert.equal(localTools.length, 5);
   for (const file of files) {
