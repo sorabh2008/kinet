@@ -2,5 +2,6 @@
 // `definition` (name, description, inputSchema) and `async run(args, ctx)`.
 import * as gitStatus from './git-status.js';
 import * as gitDiff from './git-diff.js';
+import * as findMarkers from './find-todos.js';
 
-export const localTools = [gitStatus, gitDiff];
+export const localTools = [gitStatus, gitDiff, findMarkers];

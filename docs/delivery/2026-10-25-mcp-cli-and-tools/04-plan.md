@@ -57,7 +57,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/mcp/tools/git-diff.test.js`
   - Commit: `feat(mcp): add kinet_git_diff tool`
 
-- [ ] **S6 — T3 `kinet_find_todos`**
+- [x] **S6 — T3 `kinet_find_todos`**
   - Files: `src/mcp/tools/find-todos.js` + test (git and non-git paths, `buildGrepArgs`); `local.js`.
   - ACs: 3.1-3.4, 0.8b, 0.8c (`path` goes through `resolveInsideProject`).
   - Verify by: `node --test src/mcp/tools/find-todos.test.js src/rules/patterns.test.js`
