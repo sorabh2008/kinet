@@ -173,7 +173,7 @@ export async function clearState(cwd)            // unlink, ignore ENOENT
 export async function acquireLock(cwd)           // → release(): Promise<void>; throws LockHeldError { pid }
 export function isPidAlive(pid)                  // kill(pid,0): ESRCH → false, EPERM → true
 export async function probeHealth(port, token, timeoutMs = 1000) // → { status, body? } | { error: code }
-export async function checkIdentity(cwd)         // → { state: 'stopped' } | { state: 'stale', reason } | { state: 'running', info: { ...stateFile, uptimeMs } }
+export async function checkIdentity(cwd)         // → { state: 'stopped' } | { state: 'stale', reason } | { state: 'unresponsive', info } | { state: 'running', info: { ...stateFile, uptimeMs } }
 export class LockHeldError extends Error {}
 ```
 
@@ -413,6 +413,7 @@ Steps (D2, with review-2 findings 2 and 5):
 2. `checkIdentity`:
    - `running` → stdout block A with the header `KINET MCP server already running`, exit 0 (AC-7.4).
    - `stale` → `clearState`.
+   - `unresponsive` → stderr `Error: the MCP server for this project (pid <n>) is not responding. Run: kinet mcp stop`, exit 1. Nothing is started.
 3. `token = randomBytes(32).toString('hex')`. Rotate the log: `rename(log, prevLog)`, ignoring `ENOENT`. `fd = await open(log, 'a', 0o600)`.
 4. `child = spawn(process.execPath, [BIN_PATH, 'mcp', '--port', String(port)], { cwd, detached: true, windowsHide: true, stdio: ['ignore', fd.fd, fd.fd], env: { ...process.env, KINET_MCP_TOKEN: token } })`, then `await fd.close()`. `BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url))`.
 5. **Signal safety (finding 2):** `onSignal = () => { abortStart(child, release); process.exit(130); }`, registered with `process.once('SIGINT')` and `process.once('SIGTERM')`.
@@ -446,6 +447,7 @@ KINET MCP server started
 | running | block B | 0 | none |
 | stopped (no state) | `stopped` | 1 | none |
 | stale | `stopped (stale)` | 1 | `clearState` |
+| unresponsive (pid alive, `/health` timed out) | block B with `unresponsive` as the first line, no uptime/url, plus a `hint:` line to run `kinet mcp stop` | 2 | none: the state is kept so `stop` can force-kill it |
 
 Block B:
 ```
@@ -457,12 +459,12 @@ running
   log:    /abs/project/.kinet/run/mcp.log
 ```
 
-The first line is always exactly `running`, `stopped` or `stopped (stale)`, so scripts can match on it. `status` never spawns, signals or POSTs anything (AC-8.4).
+The first line is always exactly `running`, `unresponsive`, `stopped` or `stopped (stale)`, so scripts can match on it. Identity also requires the state's `cwd` and the `/health` `cwd` to equal `realpath` of the directory the command runs in, so a state file copied with the project (`cp -R`) reads as `stopped (stale)` there (06-test-plan F-5). `status` never spawns, signals or POSTs anything (AC-8.4).
 
 ### 5.4 `kinet mcp stop`
 
 1. `checkIdentity`. If the result is `stopped`, print `not running`. If it is `stale`, print `not running (cleared stale state)` and run `clearState`. Exit 0 in both cases (AC-9.2). Nothing is signalled.
-2. `running`: `POST /shutdown` with the token (1 s timeout; errors are ignored).
+2. `running` or `unresponsive`: `POST /shutdown` with the token (1 s timeout; errors are ignored). A hung server ignores it and is force-killed in step 3 (06-test-plan F-1).
 3. Poll `isPidAlive(pid)` every 100 ms for up to 5000 ms. If it is still alive, send `process.kill(pid, 'SIGKILL')`.
 4. `clearState`. stdout: `stopped (pid 12345)` or `stopped (pid 12345, force-killed after 5 s)`. Exit 0.
 5. If `SIGKILL` throws anything other than `ESRCH` → `Error: could not stop pid <n>: <code>`, exit 1, and the state is kept.
@@ -484,7 +486,7 @@ The first line is always exactly `running`, `stopped` or `stopped (stale)`, so s
 | `kinet mcp --port N` | shutdown | bad token | 3 = port in use |
 | `kinet mcp <unknown>` / bad option | — | commander error (exit 1) | — |
 | `start` | started / already running | any failure | 130 = interrupted |
-| `status` | running | stopped / stale | — |
+| `status` | running | stopped / stale | 2 = unresponsive |
 | `stop` | stopped / not running | could not kill | — |
 | `logs` | printed / follow ended | no log file | — |
 

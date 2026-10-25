@@ -12,6 +12,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { tempDir, freePort, gitRepo, git, runCli, waitFor, BIN_PATH } from '../test-support/helpers.js';
 import { ensureRunDir, isPidAlive, readState, runPaths, writeState } from '../mcp/runstate.js';
+import { runMcpStop } from './mcp.js';
 
 const skip = process.platform === 'win32';
 const projects = new Set();
@@ -249,4 +250,35 @@ test('a copied project never sees or stops the original project\'s server (06-te
   assert.match(startB.stdout, /^KINET MCP server started/);
   assert.notEqual((await readState(projB)).pid, pidA);
   assert.equal((await runCli(['mcp', 'status'], { cwd: projA })).code, 0);
+});
+
+test('a hung server is reported unresponsive, kept, and force-killed by stop (06-test-plan F-1)', { skip }, async () => {
+  const cwd = await project();
+  assert.equal((await runCli(['mcp', 'start', '--port', String(await freePort())], { cwd })).code, 0);
+  const { pid } = await readState(cwd);
+  process.kill(pid, 'SIGSTOP');
+  try {
+    const status = await runCli(['mcp', 'status'], { cwd });
+    assert.equal(status.code, 2);
+    assert.match(status.stdout, new RegExp(`^unresponsive\n {2}pid: {4}${pid}\n`));
+    assert.equal((await readState(cwd)).pid, pid);
+
+    const start = await runCli(['mcp', 'start'], { cwd });
+    assert.equal(start.code, 1);
+    assert.match(start.stderr, /is not responding\. Run: kinet mcp stop/);
+
+    const original = process.stdout.write;
+    let output = '';
+    process.stdout.write = (chunk) => { output += chunk; return true; };
+    try {
+      await runMcpStop({ cwd, graceMs: 300, pollMs: 50 });
+    } finally {
+      process.stdout.write = original;
+    }
+    assert.equal(output, `stopped (pid ${pid}, force-killed after 0.3 s)\n`);
+    await waitFor(() => !isPidAlive(pid), 3000);
+    assert.equal(await readState(cwd), null);
+  } finally {
+    if (isPidAlive(pid)) process.kill(pid, 'SIGKILL');
+  }
 });

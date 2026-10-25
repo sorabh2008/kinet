@@ -14,6 +14,7 @@ const HEALTH_TIMEOUT_MS = 4000;
 const POLL_MS = 100;
 const PORT_IN_USE_EXIT = 3;
 const STOP_GRACE_MS = 5000;
+const STATUS_UNRESPONSIVE_EXIT = 2;
 const FOLLOW_INTERVAL_MS = 250;
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -152,6 +153,9 @@ export async function runMcpStart({ port }) {
   try {
     const identity = await checkIdentity(cwd);
     if (identity.state === 'running') return out(serverBlock('KINET MCP server already running', identity.info));
+    if (identity.state === 'unresponsive') {
+      return fail(`the MCP server for this project (pid ${identity.info.pid}) is not responding. Run: kinet mcp stop`);
+    }
     if (identity.state === 'stale') await clearState(cwd);
 
     const token = randomBytes(32).toString('hex');
@@ -190,6 +194,12 @@ export async function runMcpStatus() {
   if (identity.state === 'running') {
     const { pid, port, uptimeMs, logPath } = identity.info;
     out(['running', `  pid:    ${pid}`, `  port:   ${port}`, `  url:    ${urlFor(port)}`, `  uptime: ${formatUptime(uptimeMs)}`, `  log:    ${logPath}`].join('\n'));
+    return;
+  }
+  if (identity.state === 'unresponsive') {
+    const { pid, port, logPath } = identity.info;
+    out(['unresponsive', `  pid:    ${pid}`, `  port:   ${port}`, `  log:    ${logPath}`, '  hint:   the process is alive but /health did not answer; run `kinet mcp stop` to force-kill it'].join('\n'));
+    process.exitCode = STATUS_UNRESPONSIVE_EXIT;
     return;
   }
   if (identity.state === 'stale') {
@@ -232,6 +242,7 @@ export async function runMcpStop({ cwd = process.cwd(), graceMs = STOP_GRACE_MS,
     return out('not running (cleared stale state)');
   }
 
+  // 'running' or 'unresponsive': both are our server; a hung one simply ends up force-killed.
   const { pid, port, token } = identity.info;
   await requestShutdown(port, token);
   let forced = false;

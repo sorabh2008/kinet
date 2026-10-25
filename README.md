@@ -71,7 +71,7 @@ kinet status                # Show installation health for current project
 kinet mcp                   # Start the stdio MCP server (called automatically by Claude Code)
 kinet mcp --port <n>        # Run the HTTP/SSE MCP server in the foreground on 127.0.0.1:<n>
 kinet mcp start [--port <n>]  # Start a background HTTP/SSE MCP server for this project (default port 7345)
-kinet mcp status            # Show whether it is running (exit 0 running, 1 stopped)
+kinet mcp status            # Show whether it is running (exit 0 running, 1 stopped, 2 unresponsive)
 kinet mcp stop              # Stop it (graceful, then force-kill after 5 s)
 kinet mcp logs [-n <lines>] [-f]  # Show the last 50 (or n) log lines; -f follows until Ctrl-C
 ```
@@ -89,7 +89,8 @@ kinet mcp stop
 
 - URL: `http://127.0.0.1:7345/sse` (use `127.0.0.1`, not `localhost`, as some clients try IPv6 first).
 - Run files live in `<project>/.kinet/run/` (state, log, previous log), which ignores itself in git even if `kinet init` never ran. The log is rotated on each `start` (one previous run is kept as `mcp.log.1`) and capped at 10 MB per run. It records start, each tool call (name, duration, ok/error; never argument values) and shutdown.
-- `status` and `stop` only act on a process that proves it is this project's server (per-start token checked over `/health`), so a reused PID is never signalled.
+- `status` and `stop` only act on a process that proves it is this project's server (per-start token and project path checked over `/health`), so a reused PID, or a run-state file copied along with the project, never makes kinet signal another process.
+- If the server's process is alive but `/health` does not answer (for example a hung process), `status` prints `unresponsive` and exits 2, `start` refuses to start a second one, and `stop` force-kills it.
 
 **Security notes**
 

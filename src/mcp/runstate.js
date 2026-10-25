@@ -174,6 +174,12 @@ export async function checkIdentity(cwd) {
   if (state.cwd !== projectRoot) return { state: 'stale', reason: 'state belongs to another project directory' };
   if (!isPidAlive(state.pid)) return { state: 'stale', reason: 'process is gone' };
   const health = await probeHealth(state.port, state.token);
+  // Our port accepted the connection but never answered: the server is alive but
+  // hung (blocked loop, SIGSTOP, slow wake). Keep the state so `stop` can still
+  // force-kill it instead of orphaning it (06-test-plan F-1).
+  if (health.error === 'TimeoutError') {
+    return { state: 'unresponsive', info: { ...state, uptimeMs: Date.now() - Date.parse(state.startedAt) } };
+  }
   if (health.status !== 200) return { state: 'stale', reason: `health check failed (${health.status ?? health.error})` };
   if (health.body.pid !== state.pid || health.body.cwd !== projectRoot) {
     return { state: 'stale', reason: 'a different server answered' };
