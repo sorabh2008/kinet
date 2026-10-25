@@ -95,7 +95,7 @@ Each slice leaves `npm run lint && npm test` green once S0 has landed. On Node 2
   - Verify by: `node --test src/cli/mcp.test.js src/cli/mcp-lifecycle.test.js`, then `node bin/kinet.js mcp start && node bin/kinet.js mcp stop && node bin/kinet.js mcp status; echo $?` (expect `stopped (pid N)`, then `stopped` and 1).
   - Commit: `feat(cli): add kinet mcp stop with identity-checked graceful shutdown`
 
-- [ ] **S12 — `logs`**
+- [x] **S12 — `logs`**
   - Files: `src/cli/mcp.js` (`runMcpLogs`, including `-f` with `fs.watchFile`); `bin/kinet.js`; the logs, rotation and no-secret-in-log parts of `mcp-lifecycle.test.js`.
   - ACs: 10.1-10.5.
   - Verify by: `node --test src/cli/mcp-lifecycle.test.js`, then `node bin/kinet.js mcp start && node bin/kinet.js mcp logs -n 5 && node bin/kinet.js mcp stop`.

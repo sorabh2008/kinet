@@ -1,10 +1,11 @@
 // `kinet mcp start|status|stop|logs`: manage one background HTTP/SSE MCP server per project.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { unwatchFile, watchFile } from 'node:fs';
 import { open, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-  ensureRunDir, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, LockHeldError,
+  ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, LockHeldError,
 } from '../mcp/runstate.js';
 
 const BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url));
@@ -12,6 +13,7 @@ const HEALTH_TIMEOUT_MS = 4000;
 const POLL_MS = 100;
 const PORT_IN_USE_EXIT = 3;
 const STOP_GRACE_MS = 5000;
+const FOLLOW_INTERVAL_MS = 250;
 const IS_WINDOWS = process.platform === 'win32';
 
 function out(text) {
@@ -236,4 +238,51 @@ export async function runMcpStop({ cwd = process.cwd(), graceMs = STOP_GRACE_MS,
   }
   await clearState(cwd);
   out(forced ? `stopped (pid ${pid}, force-killed after ${graceMs / 1000} s)` : `stopped (pid ${pid})`);
+}
+
+async function readRange(logPath, start, end) {
+  const handle = await open(logPath, 'r');
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(end - start), 0, end - start, start);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+// fs.watchFile polls, so it works the same on every OS and adds no dependency.
+function followLog(logPath, startOffset) {
+  let offset = startOffset;
+  let pending = Promise.resolve();
+  watchFile(logPath, { interval: FOLLOW_INTERVAL_MS }, (curr) => {
+    pending = pending.then(async () => {
+      try {
+        if (curr.size < offset) offset = 0; // rotated or truncated by a new start
+        if (curr.size === offset) return;
+        process.stdout.write(await readRange(logPath, offset, curr.size));
+        offset = curr.size;
+      } catch (err) {
+        if (err.code !== 'ENOENT') process.stderr.write(`Error: could not read ${logPath}: ${err.message}\n`);
+      }
+    });
+  });
+  return new Promise((resolve) => {
+    process.once('SIGINT', () => {
+      unwatchFile(logPath);
+      resolve();
+    });
+  });
+}
+
+export async function runMcpLogs({ lines = 50, follow = false, cwd = process.cwd() } = {}) {
+  const logPath = runPaths(cwd).log;
+  let text;
+  try {
+    text = await readFile(logPath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    return fail(`no logs — has \`kinet mcp start\` been run? (looked for ${logPath})`);
+  }
+  process.stdout.write(lastLines(text.toString('utf8'), lines));
+  if (follow) await followLog(logPath, text.length);
 }

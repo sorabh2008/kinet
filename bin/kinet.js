@@ -3,7 +3,7 @@ import { program } from 'commander';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { parsePort } from '../src/utils/args.js';
+import { parsePort, parsePositiveInt } from '../src/utils/args.js';
 import { DEFAULT_PORT } from '../src/mcp/runstate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -111,6 +111,17 @@ mcp
     rejectParentPort(command);
     const { runMcpStatus } = await import('../src/cli/mcp.js');
     await runMcpStatus();
+  });
+
+mcp
+  .command('logs')
+  .description("print the background server's log")
+  .option('-n, --lines <n>', 'number of lines to show', parsePositiveInt, 50)
+  .option('-f, --follow', 'keep printing new lines until Ctrl-C')
+  .action(async (opts, command) => {
+    rejectParentPort(command);
+    const { runMcpLogs } = await import('../src/cli/mcp.js');
+    await runMcpLogs({ lines: opts.lines, follow: Boolean(opts.follow) });
   });
 
 program

@@ -5,7 +5,11 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { connect, createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { tempDir, freePort, gitRepo, git, runCli } from '../test-support/helpers.js';
+import { appendFile } from 'node:fs/promises';
+import { once } from 'node:events';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { tempDir, freePort, gitRepo, git, runCli, waitFor, BIN_PATH } from '../test-support/helpers.js';
 import { ensureRunDir, isPidAlive, readState, runPaths, writeState } from '../mcp/runstate.js';
 
 const skip = process.platform === 'win32';
@@ -156,4 +160,56 @@ test('stop never signals an unrelated process that reuses the pid (AC-9.2, AC-9.
   } finally {
     unrelated.kill('SIGKILL');
   }
+});
+
+test('logs record start, tool calls and shutdown without argument values; start rotates them (AC-10.1, AC-10.3, AC-10.5)', { skip }, async () => {
+  const cwd = await project();
+  const port = await freePort();
+  assert.equal((await runCli(['mcp', 'start', '--port', String(port)], { cwd })).code, 0);
+  const { token } = await readState(cwd);
+
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(new SSEClientTransport(new URL(`http://127.0.0.1:${port}/sse`)));
+  await client.callTool({ name: 'kinet_git_diff', arguments: { path: 'SECRET_ARG_123' } });
+  await client.close();
+
+  const logs = await runCli(['mcp', 'logs', '-n', '5'], { cwd });
+  assert.equal(logs.code, 0);
+  assert.ok(logs.stdout.split('\n').filter(Boolean).length <= 5);
+  assert.match(logs.stdout, /tool name=kinet_git_diff ms=\d+ result=ok/);
+
+  assert.equal((await runCli(['mcp', 'stop'], { cwd })).code, 0);
+  const log = await readFile(runPaths(cwd).log, 'utf8');
+  assert.match(log, /INFO start mode=daemon port=\d+ pid=\d+ cwd=/);
+  assert.match(log, /INFO listening http:\/\/127\.0\.0\.1:\d+\/sse/);
+  assert.match(log, /tool name=kinet_git_diff/);
+  assert.match(log, /WARN shutdown reason=http/);
+  assert.equal(log.includes('SECRET_ARG_123'), false);
+  assert.equal(log.includes(token), false);
+
+  assert.equal((await runCli(['mcp', 'start', '--port', String(port)], { cwd })).code, 0);
+  assert.equal(await readFile(runPaths(cwd).prevLog, 'utf8'), log);
+  assert.equal((await runCli(['mcp', 'stop'], { cwd })).code, 0);
+});
+
+test('logs -f streams new lines until Ctrl-C (AC-10.2)', { skip }, async () => {
+  const cwd = await project();
+  await ensureRunDir(cwd);
+  await writeFile(runPaths(cwd).log, 'first line\n');
+  const child = spawn(process.execPath, [BIN_PATH, 'mcp', 'logs', '-f'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  child.stdout.setEncoding('utf8').on('data', (d) => { stdout += d; });
+  await waitFor(() => stdout.includes('first line'));
+  await appendFile(runPaths(cwd).log, 'appended line\n');
+  await waitFor(() => stdout.includes('appended line'), 5000);
+  child.kill('SIGINT');
+  const [code] = await once(child, 'exit');
+  assert.equal(code, 0);
+});
+
+test('logs without a log file explains what to do (AC-10.4)', { skip }, async () => {
+  const cwd = await project();
+  const result = await runCli(['mcp', 'logs'], { cwd });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /no logs — has `kinet mcp start` been run\?/);
 });
