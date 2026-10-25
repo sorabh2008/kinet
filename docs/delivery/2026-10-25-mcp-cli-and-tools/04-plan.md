@@ -144,6 +144,8 @@ Recorded by the Developer during S0-S13. Each one keeps every AC.
 
 1. **S0: `TODO_MARKERS` is named `TICKET_MARKERS`.** `kinet validate`'s ticket rule is case-insensitive, so every line that mentions `TODO_MARKERS` would add a warning. The constant, its contents and its role are unchanged. `src/rules/patterns.js` also exports `markersIn(line)` and `hasTicketRef(line)`, so T3 and the S0 test share one implementation of the 03 §3 `hasTicket` rule.
 2. **S0 verify grep.** The 03 grep for the old glob still matches one line, the `files` negation `!src/**/*.test.js` in 03 §8. That line is correct and intended; no test-script reference remains.
+7. **Security 6b fixes applied on this branch** (06-security.md and review-6b.md): symlink-safe run dir and state writes (finding 1); README wording for the MCP routes (finding 2); literal git pathspecs (finding 3); `Accept`/`Sec-Fetch-Site` checks on `/sse` (finding 4); SDK floor raised to `^1.32.0` (finding 5); `-c core.fsmonitor=false` on every git call and `--no-textconv` on diff (review-6b finding 1). Tool paths are now literal, so they are never glob-expanded. The test helper no longer pipes empty stdin to children, which fixes an intermittent EPIPE failure.
+8. **Deferred (06-security finding 6):** (a) `kinet_find_todos` outside a git repo follows symlinked files that `glob` returns; fix by `lstat`-skipping symlinks or realpath-checking them against cwd. (b) Secrets in tool output and (c) orphaned scripts after SIGKILL are accepted as documented. Token-gating `/sse` and `/messages` (finding 2) is the next release and must come before any `--host` option.
 
 ## Definition of done
 
