@@ -108,6 +108,7 @@ Inputs: `02-architecture.md`, `03-design.md`, `review-3.md`, `git diff develop..
 - (a) `kinet_find_todos` without git (`scanWithoutGit`): `glob` with `nodir` matches symlinked *files*, and `readFile` follows them, so a link to `~/.aws/credentials` would have its marker lines (at most 200 chars each) returned. Low. Fix: `lstat` and skip symlinks, or realpath-check against cwd.
 - (b) Secrets in tool output are by design: a tracked or staged `.env` appears in `kinet_git_diff`. This is the same as running git yourself, and the existing `env/*` rules already cover it. No action beyond finding 2.
 - (c) The orphaned-script-on-SIGKILL limitation is documented in the README and accepted. `safeExec` children are their own process groups, so a group kill on the daemon would not reach them anyway.
+- (d) Accepted risk [ASSUMPTION] (review-5 round 2, finding 3): a repo-local `filter.<name>.clean` in `.git/config` still runs when kinet calls `git status`/`git diff`. Plain `git status`, or a git-aware shell prompt in that folder, runs the same script, so kinet adds no new exposure. Mitigations in place: `-c core.fsmonitor=false` on every git call; `--no-ext-diff` and `--no-textconv` on diff (tested). The README tells users not to run the git tools in a folder whose `.git` they don't trust.
 
 ## Verdict
 
@@ -117,3 +118,29 @@ Inputs: `02-architecture.md`, `03-design.md`, `review-3.md`, `git diff develop..
 2. After that, Security approves without needing another design review.
 3. Findings 3-6 can go into this branch if cheap (3 and 4 are a few lines each) or into the next slice. Raising the SDK floor to `^1.32.0` is recommended but not required for this merge.
 4. TBC-2 (D8 Host/Origin guard): **confirmed.** The guard as built is correct and sufficient against DNS rebinding.
+
+## Re-check (fix commits `b9d0f8a..6b50b10`)
+
+I re-ran the repros against the new code in scratch dirs, then deleted the dirs. The repo has no `.kinet/run` and no server is still listening.
+
+1. **Finding 1: FIXED.**
+   - A planted `.kinet/run/mcp.json.tmp` symlink no longer touches its target. The victim file still reads `IMPORTANT`, the link is replaced, and the new `mcp.json` is mode 0600.
+   - A symlinked `.kinet/run` makes `kinet mcp start` exit 1 with "refusing to use … it is a symlink", and nothing is written to the link target.
+   - A symlink planted at `mcp.log` fails to open with `ELOOP` (`O_NOFOLLOW`).
+   - Residual, non-blocking: `mode: 0o700` only applies when the run dir is created. A pre-existing `.kinet/run` stays 0755. The files inside are 0600, so the exposure is limited to file names.
+2. **Finding 2: FIXED.** The README now says "any other local user account or process … as you", and the "pending sign-off" note is gone. Token-gating is committed as a prerequisite for `--host`.
+3. **Finding 3: FIXED.**
+   - From a monorepo subdirectory, `:(top)`, `:(top)other`, `:/other` and `:!x.txt` all return "No changes". Before the fix, each one leaked `other/secret.txt`.
+   - `git diff` uses `--literal-pathspecs`, and `git grep` uses a `:(literal)` prefix.
+   - A bare call with no path still shows the whole repo. That is git's normal behaviour and was accepted in the original review.
+4. **Finding 4: FIXED (live check).**
+   - A cross-site `Sec-Fetch-Site` request gets 403.
+   - An image `Accept` with no fetch metadata gets 406.
+   - `Accept: text/event-stream` still opens a session.
+5. **Finding 5: FIXED.** The range is now `^1.32.0`. `npm audit --omit=dev` no longer lists `@modelcontextprotocol/sdk`. The 10 remaining hits are transitive or pre-existing, as noted above.
+6. **review-6b #1 (fsmonitor/textconv): FIXED by inspection.** Every git call now goes through `runGit` with `-c core.fsmonitor=false`, diff uses `--no-textconv`, and `git-hostile-config.test.js` covers it.
+7. **Finding 6:** deferred, and the deferral is recorded in `04-plan.md`. It is acceptable as non-blocking.
+
+`npm test`: 109 pass, 0 fail.
+
+**Final verdict: APPROVED.** No blocking findings remain.

@@ -137,6 +137,8 @@ The KINET MCP server exposes these tools to AI assistants:
 
 The five project tools need no `kinet init` and no extra configuration. They run `git`/`npm` without a shell, refuse arguments starting with `-` and paths outside the project, and cap their output at 20,000 characters. `kinet_find_todos` uses the same ticket rule as `kinet validate`, but it only lists uppercase markers, while `validate` also flags a lowercase `todo`. `kinet_run_script` and `kinet_check_deps` need an npm project and are not available on Windows yet.
 
+The git tools honour the repository's own `.git/config` (for example `filter.<name>.clean` commands run during `git status`/`git diff`), exactly as plain `git` does. Kinet switches off `core.fsmonitor`, textconv and external diff drivers, but do not run these tools (or plain git) in a folder whose `.git` you don't trust.
+
 ### Environment Variables for MCP
 
 | Variable | Purpose |
