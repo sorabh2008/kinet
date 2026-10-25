@@ -18,13 +18,15 @@
   "files": [
     "bin",
     "src",
-    "templates"
+    "templates",
+    "!src/**/*.test.js",
+    "!src/test-support"
   ],
   "scripts": {
     "start": "node bin/kinet.js",
     "dev": "node --watch bin/kinet.js",
-    "test": "node --test src/**/*.test.js",
-    "lint": "eslint src/"
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
@@ -38,6 +40,7 @@
     "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "eslint": "^9.25.0"
   },
   "engines": {

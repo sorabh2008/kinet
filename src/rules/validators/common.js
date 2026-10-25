@@ -1,4 +1,7 @@
 // Validators that apply to both JS/TS and Java files
+import { missingTicketPattern, TICKET_MARKERS } from '../patterns.js';
+
+const MISSING_TICKET = missingTicketPattern(TICKET_MARKERS[0]);
 
 export const commonValidators = [
   {
@@ -44,7 +47,7 @@ export const commonValidators = [
       const violations = [];
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        if (/TODO(?!\s*\[#?\w+[-_]\d+\])/i.test(lines[i])) {
+        if (MISSING_TICKET.test(lines[i])) {
           violations.push({ rule: 'no-todo-without-ticket', severity: 'warning', line: i + 1, message: 'TODO without a ticket reference', suggestion: 'Add a ticket reference: TODO [PROJ-123]' });
         }
       }

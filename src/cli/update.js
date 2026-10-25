@@ -1,12 +1,12 @@
 import { join } from 'path';
-import { existsSync, writeFileSync } from 'fs';
+import { writeFileSync } from 'fs';
 import chalk from 'chalk';
 import ora from 'ora';
 import { distillContext } from '../context/distiller.js';
 import { RulesEngine } from '../rules/engine.js';
 import { MemoryStore } from '../memory/store.js';
 import { generateClaudeMd } from '../context/claude-md.js';
-import { KINET_DIR, KINET_CONFIG_FILE } from '../utils/paths.js';
+import { KINET_DIR } from '../utils/paths.js';
 import { loadConfig } from '../utils/config.js';
 
 export async function runUpdate(opts) {

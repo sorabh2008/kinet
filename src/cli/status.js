@@ -1,4 +1,4 @@
-import { join, relative } from 'path';
+import { join } from 'path';
 import { existsSync, statSync } from 'fs';
 import chalk from 'chalk';
 import { KINET_DIR, KINET_CONFIG_FILE } from '../utils/paths.js';

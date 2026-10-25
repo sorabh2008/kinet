@@ -1,4 +1,4 @@
-import { join, relative, extname } from 'path';
+import { join, relative } from 'path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { glob } from 'glob';
 import yaml from 'js-yaml';

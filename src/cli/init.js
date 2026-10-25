@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
@@ -9,7 +9,7 @@ import { MemoryStore } from '../memory/store.js';
 import { PrpSystem } from '../prp/system.js';
 import { generateClaudeMd } from '../context/claude-md.js';
 import { installClaudeCommands } from '../commands/installer.js';
-import { KINET_DIR, KINET_CONFIG_FILE, templatePath } from '../utils/paths.js';
+import { KINET_DIR, KINET_CONFIG_FILE } from '../utils/paths.js';
 import { updateGitignore } from '../utils/gitignore.js';
 
 export async function runInit(opts) {
