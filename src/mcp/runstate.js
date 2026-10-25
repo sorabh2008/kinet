@@ -1,7 +1,7 @@
 // Run state for the background MCP server, kept per project in <cwd>/.kinet/run/.
 // Used by the CLI side only; the daemon itself never writes these files.
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const DEFAULT_PORT = 7345;
@@ -162,15 +162,20 @@ export async function probeHealth(port, token, timeoutMs = 1000) {
   }
 }
 
-// D5: running only if our pid answers on our port with our token for our cwd.
+// D5: running only if our pid answers on our port with our token, for the
+// project directory this command runs in.
 // Pure: it never deletes anything; callers decide what to clear.
 export async function checkIdentity(cwd) {
   const state = await readState(cwd);
   if (!state) return { state: 'stopped' };
+  // A state file copied with the project (cp -R, rsync, restore) points at the
+  // original project's server; it must never count as ours (06-test-plan F-5).
+  const projectRoot = await realpath(cwd);
+  if (state.cwd !== projectRoot) return { state: 'stale', reason: 'state belongs to another project directory' };
   if (!isPidAlive(state.pid)) return { state: 'stale', reason: 'process is gone' };
   const health = await probeHealth(state.port, state.token);
   if (health.status !== 200) return { state: 'stale', reason: `health check failed (${health.status ?? health.error})` };
-  if (health.body.pid !== state.pid || health.body.cwd !== state.cwd) {
+  if (health.body.pid !== state.pid || health.body.cwd !== projectRoot) {
     return { state: 'stale', reason: 'a different server answered' };
   }
   return { state: 'running', info: { ...state, uptimeMs: Date.now() - Date.parse(state.startedAt) } };

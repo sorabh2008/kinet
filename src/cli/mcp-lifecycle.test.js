@@ -2,7 +2,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, symlink, writeFile } from 'node:fs/promises';
+import { cp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { connect, createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -223,4 +223,30 @@ test('start refuses a symlinked .kinet planted by a cloned repo (06-security fin
   assert.equal(result.code, 1);
   assert.match(result.stderr, /is a symlink/);
   assert.equal(existsSync(join(elsewhere, 'run')), false);
+});
+
+test('a copied project never sees or stops the original project\'s server (06-test-plan F-5)', { skip }, async () => {
+  const projA = await project();
+  const portA = await freePort();
+  assert.equal((await runCli(['mcp', 'start', '--port', String(portA)], { cwd: projA })).code, 0);
+  const { pid: pidA } = await readState(projA);
+
+  const projB = join(await tempDir(), 'projB');
+  await cp(projA, projB, { recursive: true });
+  projects.add(projB);
+
+  const status = await runCli(['mcp', 'status'], { cwd: projB });
+  assert.equal(status.code, 1);
+  assert.equal(status.stdout, 'stopped (stale)\n');
+
+  const stop = await runCli(['mcp', 'stop'], { cwd: projB });
+  assert.equal(stop.code, 0);
+  assert.match(stop.stdout, /^not running/);
+  assert.equal(isPidAlive(pidA), true);
+
+  const startB = await runCli(['mcp', 'start', '--port', String(await freePort())], { cwd: projB });
+  assert.equal(startB.code, 0, startB.stderr);
+  assert.match(startB.stdout, /^KINET MCP server started/);
+  assert.notEqual((await readState(projB)).pid, pidA);
+  assert.equal((await runCli(['mcp', 'status'], { cwd: projA })).code, 0);
 });
