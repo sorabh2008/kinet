@@ -325,3 +325,24 @@ test('an unrelated process holding the port silently is never reported unrespons
     decoy.kill('SIGKILL');
   }
 });
+
+test('Ctrl-C at any point during start leaves no lock and no orphan daemon (BUG-1)', { skip }, async () => {
+  const cwd = await project();
+  const port = await freePort();
+  // Steps through the first ~100 ms, where the lock is taken, then a few later points.
+  // The original race is timing-dependent; the lock unit tests pin the mechanism.
+  const delays = [...Array.from({ length: 26 }, (_, i) => i * 4), 120, 160, 220];
+  for (const delayMs of delays) {
+    const child = spawn(process.execPath, [BIN_PATH, 'mcp', 'start', '--port', String(port)], { cwd, stdio: 'ignore' });
+    // Listen first: a start that finishes before the signal would otherwise be missed.
+    const exited = once(child, 'exit');
+    await new Promise((r) => setTimeout(r, delayMs));
+    child.kill('SIGINT');
+    const [code, signal] = await exited;
+    assert.ok(code === 130 || code === 0 || signal === 'SIGINT', `delay ${delayMs}: code ${code} signal ${signal}`);
+    assert.equal(existsSync(runPaths(cwd).lock), false, `lock left at delay ${delayMs}`);
+    // A start that won the race is a normal running server; stop it before the next round.
+    assert.equal((await runCli(['mcp', 'stop'], { cwd })).code, 0);
+    assert.equal(await canConnect('127.0.0.1', port), 'ECONNREFUSED', `orphan listener at delay ${delayMs}`);
+  }
+});

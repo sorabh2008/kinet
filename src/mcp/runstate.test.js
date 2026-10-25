@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { lstat, mkdir, open, readFile, stat, symlink, utimes, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   acquireLock, ensureRunDir, runPaths, readState, writeState, clearState, checkIdentity, isPidAlive, LockHeldError,
@@ -63,14 +63,24 @@ test('a lock older than 10 s is stale even if its pid is alive', async () => {
   await release();
 });
 
-test('an unparseable lock is judged by its age', async () => {
+test('an empty or unparsable lock is stale straight away (BUG-1)', async () => {
   const cwd = await tempDir();
   await ensureRunDir(cwd);
-  await writeFile(runPaths(cwd).lock, 'garbage');
-  await assert.rejects(acquireLock(cwd), LockHeldError);
-  const old = new Date(Date.now() - 60000);
-  await utimes(runPaths(cwd).lock, old, old);
+  for (const debris of ['', 'garbage']) {
+    await writeFile(runPaths(cwd).lock, debris);
+    const release = await acquireLock(cwd);
+    await release();
+  }
+});
+
+test('the lock is written atomically with the owner pid and leaves no temp file', async () => {
+  const cwd = await tempDir();
+  await ensureRunDir(cwd);
   const release = await acquireLock(cwd);
+  const lock = JSON.parse(await readFile(runPaths(cwd).lock, 'utf8'));
+  assert.equal(lock.pid, process.pid);
+  assert.ok(Date.parse(lock.createdAt) <= Date.now());
+  assert.deepEqual((await readdir(runPaths(cwd).dir)).filter((f) => f.includes('.tmp')), []);
   await release();
 });
 

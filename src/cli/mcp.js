@@ -1,12 +1,12 @@
 // `kinet mcp start|status|stop|logs`: manage one background HTTP/SSE MCP server per project.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { unwatchFile, watchFile } from 'node:fs';
+import { readFileSync, unlinkSync, unwatchFile, watchFile } from 'node:fs';
 import { open, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
   ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, looksLikeOurDaemon, LockHeldError,
-  UnsafeRunDirError, LOG_OPEN_FLAGS,
+  UnsafeRunDirError, LOG_OPEN_FLAGS, lockTmpPath,
 } from '../mcp/runstate.js';
 
 const BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url));
@@ -64,11 +64,26 @@ function killGroup(pid, signal) {
   }
 }
 
-// Synchronous kill so it is safe inside a signal handler; the detached child
-// does not receive the terminal's Ctrl-C, so it must be killed explicitly.
-export function abortStart(child, release) {
-  killGroup(child.pid, 'SIGKILL');
-  release().catch(() => {});
+// Removes the lock only if this process owns it. Synchronous on purpose: it runs
+// in a signal handler right before process.exit(), where async work never finishes.
+function releaseLockSync(lockPath) {
+  try {
+    unlinkSync(lockTmpPath(lockPath));
+  } catch {
+    // No temp file left: nothing to do.
+  }
+  try {
+    if (JSON.parse(readFileSync(lockPath, 'utf8')).pid === process.pid) unlinkSync(lockPath);
+  } catch {
+    // No lock, or another start's lock: leave it alone.
+  }
+}
+
+// Synchronous so it is safe inside a signal handler; the detached child does not
+// receive the terminal's Ctrl-C, so it must be killed explicitly.
+export function abortStart(child, lockPath) {
+  if (child) killGroup(child.pid, 'SIGKILL');
+  releaseLockSync(lockPath);
 }
 
 // Resolves { body } once the child answers /health, { exitCode } if it dies, or { timedOut }.
@@ -134,6 +149,25 @@ async function reportStartFailure(result, port, logPath) {
 
 export async function runMcpStart({ port }) {
   const cwd = process.cwd();
+  const { lock } = runPaths(cwd);
+  let child = null;
+  // Installed before the lock is taken, so Ctrl-C at any point kills what we
+  // started and removes our lock (BUG-1, review-2 finding 2).
+  const onSignal = () => {
+    abortStart(child, lock);
+    process.exit(130);
+  };
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
+  try {
+    await startWithLock(cwd, port, (spawned) => { child = spawned; });
+  } finally {
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
+  }
+}
+
+async function startWithLock(cwd, port, onSpawn) {
   let paths;
   try {
     paths = await ensureRunDir(cwd);
@@ -149,7 +183,6 @@ export async function runMcpStart({ port }) {
     throw err;
   }
 
-  let onSignal;
   try {
     const identity = await checkIdentity(cwd);
     if (identity.state === 'running') return out(serverBlock('KINET MCP server already running', identity.info));
@@ -161,13 +194,7 @@ export async function runMcpStart({ port }) {
     const token = randomBytes(32).toString('hex');
     await rotateLog(paths);
     const child = await spawnDaemon(cwd, port, token, paths.log);
-
-    onSignal = () => {
-      abortStart(child, release);
-      process.exit(130);
-    };
-    process.once('SIGINT', onSignal);
-    process.once('SIGTERM', onSignal);
+    onSpawn(child);
 
     const result = await waitForHealthy(child, port, token);
     if (!result.body) {
@@ -180,10 +207,6 @@ export async function runMcpStart({ port }) {
     child.unref();
     out(serverBlock('KINET MCP server started', { pid: child.pid, port, logPath: paths.log }));
   } finally {
-    if (onSignal) {
-      process.off('SIGINT', onSignal);
-      process.off('SIGTERM', onSignal);
-    }
     await release();
   }
 }

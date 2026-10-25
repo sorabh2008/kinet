@@ -1,7 +1,7 @@
 // Run state for the background MCP server, kept per project in <cwd>/.kinet/run/.
 // Used by the CLI side only; the daemon itself never writes these files.
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { safeExec } from '../utils/exec.js';
 
@@ -105,6 +105,8 @@ export function isPidAlive(pid) {
   }
 }
 
+// Locks are written atomically (see createLock), so an empty or unparsable lock
+// can only be debris from a crash: it is stale (BUG-1).
 async function lockIsStale(lockPath) {
   const text = await ignoreMissing(readFile(lockPath, 'utf8'));
   if (text === null) return { stale: true };
@@ -113,17 +115,30 @@ async function lockIsStale(lockPath) {
     const old = Date.now() - Date.parse(lock.createdAt) > LOCK_STALE_MS;
     return { stale: !isPidAlive(lock.pid) || old, pid: lock.pid };
   } catch {
-    const info = await ignoreMissing(stat(lockPath));
-    return { stale: !info || Date.now() - info.mtimeMs > LOCK_STALE_MS, pid: 'unknown' };
+    return { stale: true, pid: 'unknown' };
   }
 }
 
+export function lockTmpPath(lockPath, pid = process.pid) {
+  return `${lockPath}.${pid}.tmp`;
+}
+
+// The lock content is written to a private temp file first and then hard-linked
+// into place: link() fails with EEXIST if the lock exists, and the lock can never
+// be seen empty, even if the process dies mid-way (BUG-1).
 async function createLock(lockPath) {
-  const handle = await open(lockPath, 'wx', 0o600);
+  const tmp = lockTmpPath(lockPath);
+  await ignoreMissing(unlink(tmp));
+  const handle = await open(tmp, 'wx', 0o600);
   try {
     await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
   } finally {
     await handle.close();
+  }
+  try {
+    await link(tmp, lockPath);
+  } finally {
+    await ignoreMissing(unlink(tmp));
   }
   return async () => {
     await ignoreMissing(unlink(lockPath));

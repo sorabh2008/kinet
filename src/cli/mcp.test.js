@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { formatUptime, lastLines, abortStart, runMcpStop } from './mcp.js';
 import { acquireLock, ensureRunDir, runPaths, isPidAlive, writeState, readState } from '../mcp/runstate.js';
 import { tempDir, waitFor, freePort, writeFiles } from '../test-support/helpers.js';
@@ -21,15 +22,23 @@ test('lastLines', () => {
   assert.equal(lastLines('', 5), '');
 });
 
-test('abortStart kills the detached child and removes the lock (review-2 finding 2)', { skip: process.platform === 'win32' }, async () => {
+test('abortStart kills the detached child and removes our lock (review-2 finding 2, BUG-1)', { skip: process.platform === 'win32' }, async () => {
   const cwd = await tempDir();
   await ensureRunDir(cwd);
-  const release = await acquireLock(cwd);
+  await acquireLock(cwd);
   const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: 'ignore' });
   await waitFor(() => isPidAlive(child.pid));
-  abortStart(child, release);
+  abortStart(child, runPaths(cwd).lock);
+  assert.equal(existsSync(runPaths(cwd).lock), false);
   await waitFor(() => !isPidAlive(child.pid), 3000);
-  await waitFor(() => !existsSync(runPaths(cwd).lock), 3000);
+});
+
+test('abortStart never removes another start\'s lock', async () => {
+  const cwd = await tempDir();
+  await ensureRunDir(cwd);
+  await writeFile(runPaths(cwd).lock, JSON.stringify({ pid: process.pid + 1, createdAt: new Date().toISOString() }));
+  abortStart(null, runPaths(cwd).lock);
+  assert.equal(existsSync(runPaths(cwd).lock), true);
 });
 
 // A fake daemon that passes the identity check but ignores /shutdown. It runs from a
