@@ -8,6 +8,7 @@ import { MemoryStore } from '../memory/store.js';
 import { generateClaudeMd } from '../context/claude-md.js';
 import { KINET_DIR } from '../utils/paths.js';
 import { loadConfig } from '../utils/config.js';
+import { installTeam, teamDir } from '../team/installer.js';
 
 export async function runUpdate(opts) {
   const cwd = process.cwd();
@@ -19,7 +20,7 @@ export async function runUpdate(opts) {
   }
 
   const kinetDir = join(cwd, KINET_DIR);
-  const all = !opts.context && !opts.rules && !opts.memory;
+  const all = !opts.context && !opts.rules && !opts.memory && !opts.team;
 
   console.log(chalk.cyan('\n  KINET update\n'));
 
@@ -45,6 +46,17 @@ export async function runUpdate(opts) {
     const memory = new MemoryStore(kinetDir);
     await memory.rebuild();
     spinner.succeed('Memory index rebuilt');
+  }
+
+  if (all || opts.team) {
+    const spinner = ora('Linking delivery team...').start();
+    const team = installTeam(cwd);
+    if (!team) {
+      spinner.info(`No delivery team found at ${teamDir()} (set KINET_TEAM_DIR to use one)`);
+    } else {
+      spinner.succeed(`Delivery team linked (${team.linked.length} linked, ${team.removed.length} stale removed)`);
+      for (const reason of team.skipped) console.log(chalk.yellow(`    skipped ${reason}`));
+    }
   }
 
   console.log(chalk.green('\n  Update complete.\n'));
