@@ -1,5 +1,5 @@
-import { join, relative, extname } from 'path';
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, symlinkSync, unlinkSync } from 'fs';
+import { join, extname } from 'path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from 'fs';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';

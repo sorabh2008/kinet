@@ -1,4 +1,4 @@
-import { join, relative } from 'path';
+import { join } from 'path';
 import { existsSync, statSync } from 'fs';
 import chalk from 'chalk';
 import { KINET_DIR, KINET_CONFIG_FILE } from '../utils/paths.js';
@@ -24,6 +24,7 @@ export async function runStatus() {
     { label: '.kinet/prp/',         path: join(KINET_DIR, 'prp') },
     { label: '.claude/commands/',   path: join('.claude', 'commands') },
     { label: '.claude/settings.json', path: join('.claude', 'settings.json') },
+    { label: '.claude/agents/ (team)', path: join('.claude', 'agents') },
   ];
 
   for (const { label, path } of checks) {

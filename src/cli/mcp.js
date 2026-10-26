@@ -1,0 +1,345 @@
+// `kinet mcp start|status|stop|logs`: manage one background HTTP/SSE MCP server per project.
+import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { unwatchFile, watchFile } from 'node:fs';
+import { open, readFile, rename } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import {
+  ensureRunDir, runPaths, writeState, clearState, acquireLock, probeHealth, checkIdentity, isPidAlive, looksLikeOurDaemon, LockHeldError,
+  UnsafeRunDirError, LOG_OPEN_FLAGS,
+} from '../mcp/runstate.js';
+
+const BIN_PATH = fileURLToPath(new URL('../../bin/kinet.js', import.meta.url));
+const HEALTH_TIMEOUT_MS = 4000;
+const POLL_MS = 100;
+const PORT_IN_USE_EXIT = 3;
+const STOP_GRACE_MS = 5000;
+const STATUS_UNRESPONSIVE_EXIT = 2;
+const FOLLOW_INTERVAL_MS = 250;
+const IS_WINDOWS = process.platform === 'win32';
+
+function out(text) {
+  process.stdout.write(`${text}\n`);
+}
+
+function fail(text) {
+  process.stderr.write(`Error: ${text}\n`);
+  process.exitCode = 1;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function formatUptime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+export function lastLines(text, n) {
+  const lines = text.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  const tail = lines.slice(-n);
+  return tail.length ? `${tail.join('\n')}\n` : '';
+}
+
+function urlFor(port) {
+  return `http://127.0.0.1:${port}/sse`;
+}
+
+function serverBlock(header, { pid, port, logPath }) {
+  return [header, `  pid:  ${pid}`, `  port: ${port}`, `  url:  ${urlFor(port)}`, `  log:  ${logPath}`].join('\n');
+}
+
+function killGroup(pid, signal) {
+  try {
+    if (IS_WINDOWS) process.kill(pid, signal);
+    else process.kill(-pid, signal);
+  } catch (err) {
+    if (err.code !== 'ESRCH') throw err;
+  }
+}
+
+// Never throws: on Ctrl-C the terminal signals the whole foreground group, so the
+// child may already be gone (ESRCH) or mid-exit (EPERM on macOS) (BUG-2).
+function killGroupQuietly(pid, kill = process.kill) {
+  try {
+    if (IS_WINDOWS) kill(pid, 'SIGKILL');
+    else kill(-pid, 'SIGKILL');
+  } catch {
+    // ESRCH/EPERM mean it is already gone or going; nothing else is worth crashing for.
+  }
+}
+
+// Cleanup for an interrupted start. The lock bookkeeping lives in memory
+// (`session.lockPromise` resolves to our release function), so nothing has to be
+// read back from disk and no *Sync call is needed (BUG-3). Never rejects.
+export async function abortStart(session, { kill = process.kill } = {}) {
+  session.aborted = true;
+  if (session.child) killGroupQuietly(session.child.pid, kill);
+  const release = session.lockPromise ? await session.lockPromise.catch(() => null) : null;
+  try {
+    await release?.();
+  } catch {
+    // The lock is already gone.
+  }
+}
+
+// Resolves { body } once the child answers /health, { exitCode } if it dies, or { timedOut }.
+async function waitForHealthy(child, port, token) {
+  let exited = null;
+  const onExit = (code) => { exited = { exitCode: code }; };
+  child.once('exit', onExit);
+  try {
+    const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (exited) return exited;
+      const health = await probeHealth(port, token, 500);
+      if (health.status === 200 && health.body.pid === child.pid) return { body: health.body };
+      await sleep(POLL_MS);
+    }
+    return exited ?? { timedOut: true };
+  } finally {
+    child.off('exit', onExit);
+  }
+}
+
+async function logTail(logPath, n = 20) {
+  try {
+    return lastLines(await readFile(logPath, 'utf8'), n);
+  } catch {
+    return '';
+  }
+}
+
+async function rotateLog(paths) {
+  try {
+    await rename(paths.log, paths.prevLog);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
+async function spawnDaemon(cwd, port, token, logPath) {
+  const logFile = await open(logPath, LOG_OPEN_FLAGS, 0o600);
+  try {
+    // The token goes in the environment, not argv, so it never shows up in `ps`.
+    return spawn(process.execPath, [BIN_PATH, 'mcp', '--port', String(port)], {
+      cwd,
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', logFile.fd, logFile.fd],
+      env: { ...process.env, KINET_MCP_TOKEN: token },
+    });
+  } finally {
+    await logFile.close();
+  }
+}
+
+async function reportStartFailure(result, port, logPath) {
+  if (result.exitCode === PORT_IN_USE_EXIT) {
+    return fail(`port ${port} is in use. Try: kinet mcp start --port <other>`);
+  }
+  const reason = result.timedOut
+    ? `MCP server did not become healthy within ${HEALTH_TIMEOUT_MS / 1000} s.`
+    : `MCP server exited during startup (code ${result.exitCode}).`;
+  fail(`${reason} Last log lines:\n${await logTail(logPath)}`);
+}
+
+export async function runMcpStart({ port }) {
+  const cwd = process.cwd();
+  const session = { aborted: false, child: null, lockPromise: null };
+  // Installed before the lock is taken, so Ctrl-C at any point kills what we
+  // started and removes our lock (BUG-1, review-2 finding 2). Repeat signals
+  // while cleaning up are ignored; exit 130 once cleanup has settled.
+  const onSignal = () => {
+    if (session.aborted) return;
+    abortStart(session).finally(() => process.exit(130));
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+  try {
+    await startWithLock(cwd, port, session);
+  } finally {
+    if (!session.aborted) {
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+    }
+  }
+}
+
+async function startWithLock(cwd, port, session) {
+  let paths;
+  try {
+    paths = await ensureRunDir(cwd);
+  } catch (err) {
+    if (err instanceof UnsafeRunDirError) return fail(err.message);
+    throw err;
+  }
+  let release;
+  session.lockPromise = acquireLock(cwd);
+  try {
+    release = await session.lockPromise;
+  } catch (err) {
+    if (err instanceof LockHeldError) return fail(err.message);
+    throw err;
+  }
+
+  try {
+    const identity = await checkIdentity(cwd);
+    if (identity.state === 'running') return out(serverBlock('KINET MCP server already running', identity.info));
+    if (identity.state === 'unresponsive') {
+      return fail(`the MCP server for this project (pid ${identity.info.pid}) is not responding. Run: kinet mcp stop`);
+    }
+    if (identity.state === 'stale') await clearState(cwd);
+
+    const token = randomBytes(32).toString('hex');
+    await rotateLog(paths);
+    if (session.aborted) return;
+    const child = await spawnDaemon(cwd, port, token, paths.log);
+    session.child = child;
+    // The signal may have landed while the spawn was in flight, after the
+    // handler's kill step: kill the child here so it is never orphaned.
+    if (session.aborted) return killGroupQuietly(child.pid);
+
+    const result = await waitForHealthy(child, port, token);
+    if (session.aborted) return;
+    if (!result.body) {
+      if (child.exitCode === null && child.signalCode === null) killGroup(child.pid, 'SIGKILL');
+      return await reportStartFailure(result, port, paths.log);
+    }
+
+    const { cwd: realCwd, startedAt, version } = result.body;
+    await writeState(cwd, { pid: child.pid, port, token, cwd: realCwd, startedAt, logPath: paths.log, version });
+    child.unref();
+    out(serverBlock('KINET MCP server started', { pid: child.pid, port, logPath: paths.log }));
+  } finally {
+    await release();
+  }
+}
+
+export async function runMcpStatus() {
+  const cwd = process.cwd();
+  const identity = await checkIdentity(cwd);
+  if (identity.state === 'running') {
+    const { pid, port, uptimeMs, logPath } = identity.info;
+    out(['running', `  pid:    ${pid}`, `  port:   ${port}`, `  url:    ${urlFor(port)}`, `  uptime: ${formatUptime(uptimeMs)}`, `  log:    ${logPath}`].join('\n'));
+    return;
+  }
+  if (identity.state === 'unresponsive') {
+    const { pid, port, logPath } = identity.info;
+    out(['unresponsive', `  pid:    ${pid}`, `  port:   ${port}`, `  log:    ${logPath}`, '  hint:   the process is alive but /health did not answer; run `kinet mcp stop` to force-kill it'].join('\n'));
+    process.exitCode = STATUS_UNRESPONSIVE_EXIT;
+    return;
+  }
+  if (identity.state === 'stale') {
+    await clearState(cwd);
+    out('stopped (stale)');
+  } else {
+    out('stopped');
+  }
+  process.exitCode = 1;
+}
+
+async function requestShutdown(port, token) {
+  try {
+    await fetch(`http://127.0.0.1:${port}/shutdown`, {
+      method: 'POST',
+      headers: { 'X-Kinet-Token': token },
+      signal: AbortSignal.timeout(1000),
+    });
+  } catch {
+    // A server that does not answer is force-killed below.
+  }
+}
+
+async function waitForExit(pid, graceMs, pollMs) {
+  const deadline = Date.now() + graceMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) return true;
+    await sleep(pollMs);
+  }
+  return !isPidAlive(pid);
+}
+
+// Signals only a process that checkIdentity has just confirmed is this
+// project's server (AC-9.3); graceMs/pollMs are injectable for tests.
+export async function runMcpStop({ cwd = process.cwd(), graceMs = STOP_GRACE_MS, pollMs = POLL_MS } = {}) {
+  const identity = await checkIdentity(cwd);
+  if (identity.state === 'stopped') return out('not running');
+  if (identity.state === 'stale') {
+    await clearState(cwd);
+    return out('not running (cleared stale state)');
+  }
+
+  // 'running' or 'unresponsive': both are our server; a hung one simply ends up force-killed.
+  const { pid, port, token } = identity.info;
+  await requestShutdown(port, token);
+  let forced = false;
+  if (!(await waitForExit(pid, graceMs, pollMs))) {
+    // Re-confirm right before SIGKILL: never force-kill a pid we cannot prove is ours (AC-9.3).
+    if (!(await looksLikeOurDaemon(identity.info))) {
+      await clearState(cwd);
+      return out('not running (cleared stale state)');
+    }
+    try {
+      process.kill(pid, 'SIGKILL');
+      forced = true;
+    } catch (err) {
+      if (err.code !== 'ESRCH') return fail(`could not stop pid ${pid}: ${err.code}`);
+    }
+  }
+  await clearState(cwd);
+  out(forced ? `stopped (pid ${pid}, force-killed after ${graceMs / 1000} s)` : `stopped (pid ${pid})`);
+}
+
+async function readRange(logPath, start, end) {
+  const handle = await open(logPath, 'r');
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(end - start), 0, end - start, start);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+// fs.watchFile polls, so it works the same on every OS and adds no dependency.
+function followLog(logPath, startOffset) {
+  let offset = startOffset;
+  let pending = Promise.resolve();
+  watchFile(logPath, { interval: FOLLOW_INTERVAL_MS }, (curr) => {
+    pending = pending.then(async () => {
+      try {
+        if (curr.size < offset) offset = 0; // rotated or truncated by a new start
+        if (curr.size === offset) return;
+        process.stdout.write(await readRange(logPath, offset, curr.size));
+        offset = curr.size;
+      } catch (err) {
+        if (err.code !== 'ENOENT') process.stderr.write(`Error: could not read ${logPath}: ${err.message}\n`);
+      }
+    });
+  });
+  return new Promise((resolve) => {
+    process.once('SIGINT', () => {
+      unwatchFile(logPath);
+      resolve();
+    });
+  });
+}
+
+export async function runMcpLogs({ lines = 50, follow = false, cwd = process.cwd() } = {}) {
+  const logPath = runPaths(cwd).log;
+  let text;
+  try {
+    text = await readFile(logPath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    return fail(`no logs — has \`kinet mcp start\` been run? (looked for ${logPath})`);
+  }
+  process.stdout.write(lastLines(text.toString('utf8'), lines));
+  if (follow) await followLog(logPath, text.length);
+}
