@@ -37,7 +37,7 @@
     "inquirer": "^12.5.2",
     "js-yaml": "^4.1.0",
     "ora": "^8.2.0",
-    "zod": "^3.24.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
