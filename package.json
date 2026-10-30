@@ -1,7 +1,7 @@
 {
   "name": "kinet-ai",
   "version": "1.1.0",
-  "description": "AI assistant bridge for React/Java repo ecosystems — context, rules, commands, and skills",
+  "description": "AI assistant bridge for React, Node, Java, Python, Salesforce and Flutter repos — context, rules, commands, and skills",
   "type": "module",
   "bin": {
     "kinet": "./bin/kinet.js"
@@ -52,7 +52,11 @@
     "mcp",
     "developer-tools",
     "react",
-    "java"
+    "node",
+    "java",
+    "python",
+    "salesforce",
+    "flutter"
   ],
   "author": "sjain@splaytech.com.au",
   "license": "MIT"

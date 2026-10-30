@@ -12,7 +12,7 @@ const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'))
 program
   .name('kinet')
   .enablePositionalOptions()
-  .description('AI assistant bridge for React/Java repo ecosystems')
+  .description('AI assistant bridge for React, Node, Java, Python, Salesforce and Flutter repos')
   .version(pkg.version);
 
 // Lazy-load commands so startup is fast
@@ -20,7 +20,7 @@ program
   .command('init')
   .description('Initialise KINET in the current project')
   .option('-y, --yes', 'skip interactive prompts and use defaults')
-  .option('--stack <stack>', 'primary stack: react|java|fullstack (default: auto-detect)')
+  .option('--stack <stack>', 'primary stack: react|node|java|python|salesforce|flutter|fullstack (default: auto-detect)')
   .action(async (opts) => {
     const { runInit } = await import('../src/cli/init.js');
     await runInit(opts);
