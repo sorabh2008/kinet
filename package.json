@@ -4,7 +4,7 @@
   "description": "AI assistant bridge for React, Node, Java, Python, Salesforce and Flutter repos — context, rules, commands, and skills",
   "type": "module",
   "bin": {
-    "kinet": "./bin/kinet.js"
+    "kinet": "bin/kinet.js"
   },
   "main": "./src/index.js",
   "repository": {
