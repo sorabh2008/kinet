@@ -26,7 +26,7 @@ export async function runRefresh() {
     removeStaleSymlinks(join(cwd, '.claude', 'commands'));
 
     const rules = new RulesEngine(kinetDir);
-    await rules.install(config.stack, config.customRules ?? []);
+    await rules.install(config.stack);
     await installClaudeCommands(cwd, config.stack);
 
     spinner.succeed('Symlinks refreshed — all templates point to the current global install');

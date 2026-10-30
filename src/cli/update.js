@@ -37,7 +37,7 @@ export async function runUpdate(opts) {
   if (all || opts.rules) {
     const spinner = ora('Refreshing rules...').start();
     const rules = new RulesEngine(kinetDir);
-    await rules.install(config.stack, config.customRules || []);
+    await rules.install(config.stack);
     spinner.succeed('Rules refreshed');
   }
 

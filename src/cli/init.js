@@ -12,6 +12,7 @@ import { installClaudeCommands } from '../commands/installer.js';
 import { installTeam, teamDir } from '../team/installer.js';
 import { KINET_DIR, KINET_CONFIG_FILE } from '../utils/paths.js';
 import { updateGitignore } from '../utils/gitignore.js';
+import { DEFAULT_LEARNING, MAX_FEEDBACK_TURNS, normalizeLearning } from '../learning/settings.js';
 
 export async function runInit(opts) {
   const cwd = process.cwd();
@@ -45,7 +46,7 @@ export async function runInit(opts) {
     // 3. Install rules
     spinner.text = 'Installing rules...';
     const rules = new RulesEngine(kinetDir);
-    await rules.install(config.stack, config.customRules);
+    await rules.install(config.stack);
 
     // 4. Initialise memory store
     spinner.text = 'Initialising memory...';
@@ -96,8 +97,8 @@ async function gatherConfig(cwd, opts) {
     return {
       stack: opts.stack || detected,
       projectName: cwd.split('/').pop(),
-      customRules: [],
       githubOrg: '',
+      learning: DEFAULT_LEARNING,
     };
   }
 
@@ -118,23 +119,37 @@ async function gatherConfig(cwd, opts) {
     {
       type: 'input',
       name: 'githubOrg',
-      message: 'GitHub org/owner (for PR and repo search):',
+      message: 'GitHub repo (org/owner, for PR and repo search):',
       default: '',
     },
     {
-      type: 'checkbox',
-      name: 'customRules',
-      message: 'Enable optional rule sets:',
-      choices: [
-        { name: 'Accessibility (WCAG 2.1 AA)', value: 'a11y' },
-        { name: 'Performance budgets', value: 'perf' },
-        { name: 'API contract enforcement', value: 'api-contracts' },
-        { name: 'Dependency version pinning', value: 'dep-pinning' },
-      ],
+      type: 'confirm',
+      name: 'retro',
+      message: 'Run a short retro after each action so the assistant learns by doing?',
+      default: true,
+    },
+    {
+      type: 'confirm',
+      name: 'feedbackEnabled',
+      message: 'Ask for your feedback after each turn, for the first few turns of a session?',
+      default: true,
+    },
+    {
+      type: 'list',
+      name: 'feedbackTurns',
+      message: 'How many turns per session should it ask for feedback?',
+      when: (a) => a.feedbackEnabled,
+      choices: Array.from({ length: MAX_FEEDBACK_TURNS }, (_, i) => ({
+        name: i === 0 ? '1 turn' : `${i + 1} turns`,
+        value: i + 1,
+      })),
+      default: 2,
     },
   ]);
 
-  return answers;
+  const { retro, feedbackEnabled, feedbackTurns, ...config } = answers;
+  config.learning = normalizeLearning({ retro, feedback: { enabled: feedbackEnabled, turns: feedbackTurns } });
+  return config;
 }
 
 function detectStack(cwd) {
@@ -230,6 +245,7 @@ function printSummary(cwd, config) {
   ${chalk.cyan('kinet update')}    Refresh context after major changes
   ${chalk.cyan('kinet validate')}  Check codebase against rules
   ${chalk.cyan('kinet refresh')}   Pull latest KINET rule templates
+  ${chalk.cyan('kinet learning')}  Change retro / feedback settings (opt out any time)
 
   Stack: ${chalk.yellow(config.stack)}  |  Project: ${chalk.yellow(config.projectName)}
   `);

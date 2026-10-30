@@ -65,6 +65,9 @@ kinet update --context      # Refresh context only
 kinet update --rules        # Re-apply rule templates only
 kinet update --memory       # Rebuild memory index only
 kinet update --team         # Re-link the delivery team only
+kinet learning              # Show retro/feedback settings
+kinet learning retro on|off
+kinet learning feedback on [1-5]|off   # ask for feedback on the first N turns of each session
 kinet validate              # Check codebase against rules, exit 1 on violations
 kinet validate --fix        # Auto-fix safe violations
 kinet validate --json       # Machine-readable output

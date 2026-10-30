@@ -131,6 +131,14 @@ mcp
   });
 
 program
+  .command('learning [setting] [value] [turns]')
+  .description('Show or change retro/feedback: `retro on|off`, `feedback on [1-5]|off`')
+  .action(async (setting, value, turns) => {
+    const { runLearning } = await import('../src/cli/learning.js');
+    await runLearning(setting, value, turns);
+  });
+
+program
   .command('status')
   .description('Show KINET installation status for the current project')
   .action(async () => {

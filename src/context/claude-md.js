@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { KINET_DIR } from '../utils/paths.js';
+import { learningSection } from '../learning/settings.js';
 import { listTeam, teamContextImports, teamDir } from '../team/installer.js';
 
 /**
@@ -23,6 +24,7 @@ export async function generateClaudeMd(context, rulesEngine, config) {
     commandsSection(),
     skillsSection(config.stack),
     mcpSection(),
+    learningSection(config.learning),
     customContext ? `\n---\n\n## Project-Specific Context\n\n${customContext}` : '',
     footer(),
   ];

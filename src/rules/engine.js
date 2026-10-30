@@ -13,12 +13,11 @@ export class RulesEngine {
     this.rulesDir = join(kinetDir, 'rules');
   }
 
-  async install(stack, customRuleIds = []) {
+  async install(stack) {
     mkdirSync(this.rulesDir, { recursive: true });
 
     const toInstall = ['common', 'env', stack];
     if (stack === 'fullstack') toInstall.push('react', 'java');
-    for (const id of customRuleIds) toInstall.push(id);
 
     for (const id of toInstall) {
       const src = join(BUILTIN_RULES_DIR, `${id}.md`);
